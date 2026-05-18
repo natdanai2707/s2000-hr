@@ -1,7 +1,7 @@
 {
-  "name": "S-2000 Leave System",
-  "short_name": "S-2000",
-  "description": "ระบบลาและบันทึกการปฏิบัติงาน",
+  "name": "S-2000 HR",
+  "short_name": "S-2000 HR",
+  "description": "ระบบบันทึกข้อมูลการทำงาน",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

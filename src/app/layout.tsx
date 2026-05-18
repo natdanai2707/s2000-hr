@@ -6,8 +6,8 @@ import { SessionProvider } from 'next-auth/react'
 const geist = Geist({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'S-2000 Leave System',
-  description: 'ระบบลาและบันทึกการปฏิบัติงาน',
+  title: 'S-2000 HR',
+  description: 'ระบบบันทึกข้อมูลการทำงาน',
   manifest: '/manifest.json',
   themeColor: '#06C755',
   appleWebApp: {
