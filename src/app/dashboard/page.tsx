@@ -22,11 +22,18 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [dayData, setDayData] = useState<Record<string, DayData>>({})
   const [calLoading, setCalLoading] = useState(true)
+  const [showForceLogout, setShowForceLogout] = useState(false)
 
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
   const [viewMonth, setViewMonth] = useState(today.getMonth())
   const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+
+  // Force logout timer ถ้าโหลดนานเกิน 6 วินาที
+  useEffect(() => {
+    const timer = setTimeout(() => setShowForceLogout(true), 6000)
+    return () => clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -85,24 +92,9 @@ export default function DashboardPage() {
     const endDate = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
     const [logsRes, leavesRes, holidaysRes] = await Promise.all([
-      supabase
-        .from('work_logs')
-        .select('log_date')
-        .eq('employee_id', session!.user.employeeId!)
-        .gte('log_date', startDate)
-        .lte('log_date', endDate),
-      supabase
-        .from('leave_requests')
-        .select('start_date, end_date, status')
-        .eq('employee_id', session!.user.employeeId!)
-        .gte('start_date', startDate)
-        .lte('end_date', endDate),
-      supabase
-        .from('holidays')
-        .select('date, name')
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .eq('is_active', true),
+      supabase.from('work_logs').select('log_date').eq('employee_id', session!.user.employeeId!).gte('log_date', startDate).lte('log_date', endDate),
+      supabase.from('leave_requests').select('start_date, end_date, status').eq('employee_id', session!.user.employeeId!).gte('start_date', startDate).lte('end_date', endDate),
+      supabase.from('holidays').select('date, name').gte('date', startDate).lte('date', endDate).eq('is_active', true),
     ])
 
     const data: Record<string, DayData> = {}
@@ -176,12 +168,17 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
         <p className="text-gray-500">กำลังโหลด...</p>
-        <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
-          className="text-xs text-gray-400 underline"
-        >
-          ออกจากระบบ
-        </button>
+        {showForceLogout && (
+          <div className="text-center">
+            <p className="text-xs text-gray-400 mb-2">ใช้เวลานานเกินไป</p>
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="text-sm text-red-500 border border-red-300 px-4 py-2 rounded-lg"
+            >
+              ออกจากระบบ
+            </button>
+          </div>
+        )}
       </div>
     )
   }
@@ -189,11 +186,17 @@ export default function DashboardPage() {
   if (!session?.user?.employeeId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
+        <div className="text-center px-4">
           <p className="text-gray-600 mb-2">บัญชี Line ของคุณยังไม่ได้ผูกกับระบบ</p>
           <p className="text-sm text-gray-400 mb-4">กรุณาติดต่อ HR เพื่อลงทะเบียน</p>
           <p className="text-xs text-gray-400">Line ID ของคุณ:</p>
-          <p className="text-sm font-mono bg-gray-100 px-3 py-2 rounded mt-1 select-all">{session?.user?.lineUserId}</p>
+          <p className="text-sm font-mono bg-gray-100 px-3 py-2 rounded mt-1 select-all break-all">{session?.user?.lineUserId}</p>
+          <button
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="mt-4 text-xs text-gray-400 underline"
+          >
+            ออกจากระบบ
+          </button>
         </div>
       </div>
     )
@@ -214,21 +217,18 @@ export default function DashboardPage() {
 
         {/* ปฏิทิน */}
         <div className="bg-white rounded-2xl p-3 shadow-sm">
-          {/* Month nav */}
           <div className="flex items-center justify-between mb-2 px-1">
             <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 text-lg leading-none">‹</button>
             <span className="font-semibold text-gray-800 text-sm">{thaiMonths[viewMonth]} {viewYear + 543}</span>
             <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 text-lg leading-none">›</button>
           </div>
 
-          {/* Day headers */}
           <div className="grid grid-cols-7 mb-1">
             {thaiDays.map((d, i) => (
               <div key={d} className={`text-center text-xs font-semibold py-1 ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-400'}`}>{d}</div>
             ))}
           </div>
 
-          {/* Grid */}
           {calLoading ? (
             <div className="h-48 flex items-center justify-center"><p className="text-gray-300 text-sm">กำลังโหลด...</p></div>
           ) : (
@@ -266,7 +266,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Legend */}
           <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 px-1">
             {[
               { color: 'bg-green-500', label: 'บันทึกงานแล้ว' },
@@ -342,7 +341,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-2">
               {myRequests.map((req) => (
-                <div key={req.id} onClick={() => router.push(`/approve/${req.id}`)} className="bg-white rounded-xl p-3 cursor-pointer hover:bg-gray-50 transition border border-gray-100">
+                <div key={req.id} onClick={() => router.push(`/leave/${req.id}`)} className="bg-white rounded-xl p-3 cursor-pointer hover:bg-gray-50 transition border border-gray-100">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-gray-800 text-sm">{(req as any).leave_type?.name}</p>
