@@ -33,7 +33,11 @@ export default function DashboardPage() {
   }, [status, router])
 
   useEffect(() => {
-    if (!session?.user?.employeeId) return
+    if (!session) return
+    if (!session?.user?.employeeId) {
+      setLoading(false)
+      return
+    }
     fetchData()
   }, [session])
 
