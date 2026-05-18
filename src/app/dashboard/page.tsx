@@ -305,6 +305,16 @@ export default function DashboardPage() {
             <div className="font-medium text-xs">เช็คอิน/เอาท์</div>
             <div className="text-xs opacity-70 mt-0.5">พนักงานประจำไซต์</div>
           </button>
+          <button onClick={() => router.push('/ot/new')} className="bg-yellow-500 text-white rounded-xl p-3 text-left">
+            <div className="text-xl mb-1">⏰</div>
+            <div className="font-medium text-xs">ขอทำ OT</div>
+            <div className="text-xs opacity-70 mt-0.5">ยื่นขออนุมัติ OT</div>
+          </button>
+          <button onClick={() => router.push('/requests')} className="bg-gray-600 text-white rounded-xl p-3 text-left">
+            <div className="text-xl mb-1">📜</div>
+            <div className="font-medium text-xs">ประวัติคำขอ</div>
+            <div className="text-xs opacity-70 mt-0.5">ลา / OT / บันทึกงาน</div>
+          </button>
         </div>
 
         {/* My Leave Requests */}
