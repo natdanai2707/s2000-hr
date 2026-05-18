@@ -173,7 +173,17 @@ export default function DashboardPage() {
   const statusColor: Record<string, string> = { pending: 'bg-yellow-100 text-yellow-800', approved: 'bg-green-100 text-green-800', rejected: 'bg-red-100 text-red-800', cancelled: 'bg-gray-100 text-gray-600' }
 
   if (status === 'loading' || loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50"><p className="text-gray-500">กำลังโหลด...</p></div>
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
+        <p className="text-gray-500">กำลังโหลด...</p>
+        <button
+          onClick={() => signOut({ callbackUrl: '/login' })}
+          className="text-xs text-gray-400 underline"
+        >
+          ออกจากระบบ
+        </button>
+      </div>
+    )
   }
 
   if (!session?.user?.employeeId) {
