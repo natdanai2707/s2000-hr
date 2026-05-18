@@ -10,6 +10,7 @@ declare module 'next-auth' {
       position?: string
       employeeType?: string
       approverId?: string
+      isAdmin?: boolean
     } & DefaultSession['user']
   }
 }

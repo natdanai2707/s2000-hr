@@ -1,6 +1,11 @@
 import NextAuth from 'next-auth'
 import LINE from 'next-auth/providers/line'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -11,24 +16,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   callbacks: {
     async signIn({ user, profile }) {
-        const lineUserId = profile?.sub as string
+      const lineUserId = profile?.sub as string
       if (!lineUserId) return false
-
-      // ตรวจสอบว่า line_user_id นี้มีในระบบหรือไม่
-      const { data: employee } = await supabase
-        .from('employees')
-        .select('id, is_active')
-        .eq('line_user_id', lineUserId)
-        .single()
-
-      // ถ้าไม่มีในระบบ ให้ล็อกอินได้แต่จะ redirect ไปหน้า pending
-      // HR จะ assign line_user_id ให้ทีหลัง
       return true
     },
     async session({ session, token }) {
       session.user.lineUserId = token.sub as string
 
-      // ดึงข้อมูล employee จาก line_user_id
+      // ดึงข้อมูล employee
       const { data: employee } = await supabase
         .from('employees')
         .select('*')
@@ -43,15 +38,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.employeeType = employee.employee_type
       }
 
-      // ตรวจสอบว่าเป็น approver หรือไม่
+      // ดึงข้อมูล approver พร้อม is_admin
       const { data: approver } = await supabase
         .from('approvers')
-        .select('id')
+        .select('id, is_admin')
         .eq('line_user_id', token.sub)
         .single()
 
       if (approver) {
         session.user.approverId = approver.id
+        session.user.isAdmin = approver.is_admin || false
       }
 
       return session

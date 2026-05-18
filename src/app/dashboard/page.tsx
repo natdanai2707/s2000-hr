@@ -333,7 +333,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Admin */}
-        {session.user.approverId && (
+        {session.user.isAdmin && (
           <button onClick={() => router.push('/admin')} className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2">
             ⚙️ จัดการระบบ (Admin)
           </button>
