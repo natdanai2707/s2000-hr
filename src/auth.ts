@@ -50,6 +50,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         session.user.isAdmin = approver.is_admin || false
       }
 
+      // ถ้าไม่มีทั้ง employee และ approver ให้แจ้งเตือน admin
+      if (!employee && !approver) {
+        try {
+          await fetch(`${process.env.NEXTAUTH_URL}/api/notify/unregistered`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lineUserId: token.sub,
+              displayName: session.user.name,
+              pictureUrl: session.user.image,
+            }),
+          })
+        } catch (e) {
+          console.error('Notify failed:', e)
+        }
+      }
+
       return session
     },
     async jwt({ token, profile }) {
