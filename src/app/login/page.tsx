@@ -1,17 +1,25 @@
 'use client'
 
 import { signIn } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 export default function LoginPage() {
+  const router = useRouter()
+  const [showDemo, setShowDemo] = useState(false)
+
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-gray-800">S-2000</h1>
-          <p className="text-gray-500 mt-1 text-sm">ระบบบันทึกข้อมูลพนักงาน</p>
+          <div className="w-20 h-20 bg-white rounded-2xl shadow-sm mx-auto mb-4 flex items-center justify-center">
+            <span className="text-xl font-bold text-gray-800">S2000</span>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800">S-2000 HR</h1>
+          <p className="text-gray-500 mt-1 text-sm">ระบบบันทึกข้อมูลการทำงาน</p>
         </div>
 
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-3">
           <button
             onClick={() => signIn('line', { callbackUrl: '/dashboard' })}
             className="w-full flex items-center justify-center gap-3 bg-[#06C755] text-white rounded-xl py-3.5 font-medium text-sm hover:bg-[#05b54d] transition"
@@ -21,6 +29,33 @@ export default function LoginPage() {
             </svg>
             เข้าสู่ระบบด้วย LINE
           </button>
+
+          <button
+            onClick={() => setShowDemo(!showDemo)}
+            className="w-full text-center text-xs text-gray-400 py-1"
+          >
+            {showDemo ? 'ซ่อนโหมดทดลอง' : 'ทดลองใช้งาน (Demo)'}
+          </button>
+
+          {showDemo && (
+            <div className="space-y-2 pt-2 border-t border-gray-100">
+              <button
+                onClick={() => router.push('/demo/employee')}
+                className="w-full flex items-center justify-center gap-2 bg-blue-50 text-blue-600 rounded-xl py-3 font-medium text-sm hover:bg-blue-100 transition"
+              >
+                👷 ทดลองแบบพนักงาน
+              </button>
+              <button
+                onClick={() => router.push('/demo/approver')}
+                className="w-full flex items-center justify-center gap-2 bg-amber-50 text-amber-600 rounded-xl py-3 font-medium text-sm hover:bg-amber-100 transition"
+              >
+                👔 ทดลองแบบผู้อนุมัติ
+              </button>
+              <p className="text-xs text-gray-400 text-center pt-1">
+                โหมดทดลองใช้ข้อมูลตัวอย่าง ไม่กระทบข้อมูลจริง
+              </p>
+            </div>
+          )}
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-4">
