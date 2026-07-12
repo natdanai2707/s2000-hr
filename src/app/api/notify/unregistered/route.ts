@@ -1,22 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export async function POST(request: NextRequest) {
   try {
-    const { lineUserId, displayName, pictureUrl } = await request.json()
+    const { lineUserId, displayName } = await request.json()
 
     const token = process.env.LINE_MESSAGING_TOKEN
     const adminUserId = process.env.LINE_ADMIN_USER_ID
 
-    if (!token || !adminUserId) {
+    if (!token || !adminUserId || !lineUserId) {
       return NextResponse.json({ error: 'Missing config' }, { status: 500 })
     }
+
+    // กัน spam: เช็คว่าเคยแจ้งเตือน user นี้ไปแล้วหรือยัง
+    const { data: existing } = await supabase
+      .from('notified_users')
+      .select('line_user_id')
+      .eq('line_user_id', lineUserId)
+      .single()
+
+    if (existing) {
+      return NextResponse.json({ success: true, skipped: true })
+    }
+
+    // บันทึกว่าแจ้งแล้ว
+    await supabase.from('notified_users').insert({ line_user_id: lineUserId })
 
     const message = {
       to: adminUserId,
       messages: [
         {
           type: 'text',
-          text: `🔔 มีพนักงานใหม่เข้าระบบ\n\n👤 ชื่อ: ${displayName || 'ไม่ทราบชื่อ'}\n🆔 Line ID: ${lineUserId}\n\nกรุณาเพิ่ม Line ID ในตาราง employees หรือ approvers เพื่อให้เข้าใช้งานได้`,
+          text: `🔔 มีพนักงานใหม่เข้าระบบ\n\n👤 ชื่อ Line: ${displayName || 'ไม่ทราบชื่อ'}\n🆔 Line ID:\n${lineUserId}\n\nกรุณาเพิ่ม Line ID ในตาราง employees เพื่อให้เข้าใช้งานได้`,
         },
       ],
     }
