@@ -8,16 +8,24 @@ import { currentMonthISO, monthRange } from '@/lib/date'
 import { StatusChip, EmptyState, PageHeader } from '@/components/ui'
 
 export default function LeaveListPage() {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const router = useRouter()
   const [requests, setRequests] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterMonth, setFilterMonth] = useState(currentMonthISO())
 
+  // guard: หน้านี้เป็นมุมมองหัวหน้า/HR (เห็นคำขอของทุกคน)
+  const canView = !!(session?.user?.approverId || session?.user?.isAdmin)
+
   useEffect(() => {
+    if (status === 'loading') return
+    if (!canView) {
+      router.replace('/dashboard')
+      return
+    }
     fetchRequests()
-  }, [filterStatus, filterMonth])
+  }, [filterStatus, filterMonth, status, canView, router])
 
   async function fetchRequests() {
     setLoading(true)
@@ -52,9 +60,17 @@ export default function LeaveListPage() {
     cancelled: 'bg-gray-100 text-gray-600',
   }
 
+  if (status === 'loading' || !canView) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-400">กำลังโหลด...</p>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <PageHeader title="คำขอลาทั้งหมด" />
+      <PageHeader title="คำขอลาทั้งหมด" subtitle="มุมมองหัวหน้า/HR" />
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
 

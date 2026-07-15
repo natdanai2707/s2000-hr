@@ -21,11 +21,13 @@ export default function DashboardPage() {
   const router = useRouter()
   const [myRequests, setMyRequests] = useState<LeaveRequest[]>([])
   const [pendingApprovals, setPendingApprovals] = useState<LeaveRequest[]>([])
+  const [pendingOt, setPendingOt] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [dayData, setDayData] = useState<Record<string, DayData>>({})
   const [calLoading, setCalLoading] = useState(true)
   const [showForceLogout, setShowForceLogout] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [copiedLineId, setCopiedLineId] = useState(false)
 
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -83,18 +85,32 @@ export default function DashboardPage() {
 
         if (empIds.length > 0) {
           // batch query เดียวแทน loop ทีละคน (แก้ปัญหา N+1)
-          const { data: pend, error: pErr } = await supabase
-            .from('leave_requests')
-            .select('*, employee:employees(*), leave_type:leave_types(*)')
-            .in('employee_id', empIds)
-            .eq('status', 'pending')
-          if (pErr) throw pErr
-          const filtered = (pend || []).filter(
-            r => levelByEmp.get(r.employee_id) === r.current_approval_level
+          // ดึงทั้งคำขอลาและ OT ที่รออนุมัติพร้อมกัน
+          const [leaveRes, otRes] = await Promise.all([
+            supabase
+              .from('leave_requests')
+              .select('*, employee:employees(*), leave_type:leave_types(*)')
+              .in('employee_id', empIds)
+              .eq('status', 'pending'),
+            supabase
+              .from('ot_requests')
+              .select('*, employee:employees(*)')
+              .in('employee_id', empIds)
+              .eq('status', 'pending'),
+          ])
+          if (leaveRes.error) throw leaveRes.error
+          if (otRes.error) throw otRes.error
+
+          // แสดงเฉพาะรายการที่ตรงกับ level ของผู้อนุมัติคนนี้
+          setPendingApprovals(
+            (leaveRes.data || []).filter(r => levelByEmp.get(r.employee_id) === r.current_approval_level)
           )
-          setPendingApprovals(filtered)
+          setPendingOt(
+            (otRes.data || []).filter(r => levelByEmp.get(r.employee_id) === r.current_approval_level)
+          )
         } else {
           setPendingApprovals([])
+          setPendingOt([])
         }
       }
     } catch (e) {
@@ -202,16 +218,43 @@ export default function DashboardPage() {
   }
 
   if (!session?.user?.employeeId) {
+    const lineId = session?.user?.lineUserId || ''
+    const copyLineId = async () => {
+      try {
+        await navigator.clipboard.writeText(lineId)
+        setCopiedLineId(true)
+        setTimeout(() => setCopiedLineId(false), 2000)
+      } catch {
+        setCopiedLineId(false)
+      }
+    }
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center px-4">
-          <p className="text-gray-600 mb-2">บัญชี Line ของคุณยังไม่ได้ผูกกับระบบ</p>
-          <p className="text-sm text-gray-400 mb-4">กรุณาติดต่อ HR เพื่อลงทะเบียน</p>
-          <p className="text-xs text-gray-400">Line ID ของคุณ:</p>
-          <p className="text-sm font-mono bg-gray-100 px-3 py-2 rounded mt-1 select-all break-all">{session?.user?.lineUserId}</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-100 p-6 text-center">
+          <div className="text-4xl mb-3">👋</div>
+          <p className="text-gray-800 font-semibold mb-1">ยินดีต้อนรับสู่ S-2000 HR</p>
+          <p className="text-sm text-gray-500 mb-4">
+            บัญชี LINE ของคุณยังไม่ได้ลงทะเบียน<br />
+            เราแจ้ง HR ให้เพิ่มคุณเข้าระบบแล้ว
+          </p>
+
+          <div className="bg-gray-50 rounded-xl p-3 text-left">
+            <p className="text-xs text-gray-400 mb-1">Line ID ของคุณ (ส่งให้ HR):</p>
+            <p className="text-sm font-mono bg-white border border-gray-200 px-3 py-2 rounded break-all select-all">{lineId}</p>
+            <button
+              onClick={copyLineId}
+              className="mt-2 w-full bg-brand-600 text-white rounded-lg py-2.5 min-h-11 text-sm font-medium"
+            >
+              {copiedLineId ? '✓ คัดลอกแล้ว' : '📋 คัดลอก Line ID'}
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400 mt-4">
+            เมื่อ HR ลงทะเบียนเสร็จ ให้เข้าสู่ระบบใหม่อีกครั้ง
+          </p>
           <button
             onClick={() => signOut({ callbackUrl: '/login' })}
-            className="mt-4 text-xs text-gray-400 underline"
+            className="mt-3 text-xs text-gray-400 underline min-h-11"
           >
             ออกจากระบบ
           </button>
@@ -326,6 +369,26 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Pending OT Approvals */}
+        {pendingOt.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">OT รออนุมัติจากคุณ ({pendingOt.length})</h2>
+            <div className="space-y-2">
+              {pendingOt.map((req) => (
+                <div key={req.id} onClick={() => router.push(`/ot/${req.id}`)} className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 cursor-pointer hover:bg-yellow-100 transition">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-800 text-sm">{req.employee?.name}</p>
+                      <p className="text-xs text-gray-500">⏰ OT {req.request_date} · {req.ot_hours} ชม. ({req.multiplier}x)</p>
+                    </div>
+                    <span className="text-yellow-600 text-xs">อนุมัติ →</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Quick Actions */}
         <div className="grid grid-cols-3 gap-2">
           <button onClick={() => router.push('/leave/new')} className="bg-[#06C755] text-white rounded-xl p-3 text-left">
@@ -359,7 +422,7 @@ export default function DashboardPage() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-gray-700">คำขอลาของฉัน</h2>
-            <button onClick={() => router.push('/leave')} className="text-xs text-blue-500">ดูทั้งหมด</button>
+            <button onClick={() => router.push('/requests')} className="text-xs text-blue-500 min-h-11 px-2">ดูทั้งหมด</button>
           </div>
           {myRequests.length === 0 ? (
             <EmptyState icon="📋" title="ยังไม่มีคำขอลา" hint="กดปุ่ม “ยื่นคำขอลา” ด้านบนเพื่อเริ่มยื่นลา มาสาย หรือขาดงาน" />
