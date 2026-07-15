@@ -41,8 +41,8 @@ export default function ApprovePage() {
         .select('level')
         .eq('employee_id', data.employee_id)
         .eq('approver_id', session.user.approverId)
-        .single()
-      setMyLevel(chain?.level || null)
+        .maybeSingle()
+      setMyLevel(chain?.level ?? null)
     }
 
     setLoading(false)
@@ -74,7 +74,7 @@ export default function ApprovePage() {
         .select('level')
         .eq('employee_id', request.employee_id)
         .eq('level', myLevel + 1)
-        .single()
+        .maybeSingle()
 
       if (nextChain) {
         // ยังมี level ถัดไป ให้ขยับ level

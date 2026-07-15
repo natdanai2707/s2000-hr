@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -16,6 +17,7 @@ interface PayrollPeriod {
 }
 
 export default function PayrollPeriodsPage() {
+  const { data: session, status } = useSession()
   const router = useRouter()
   const [periods, setPeriods] = useState<PayrollPeriod[]>([])
   const [loading, setLoading] = useState(true)
@@ -28,7 +30,15 @@ export default function PayrollPeriodsPage() {
   })
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => { fetchPeriods() }, [])
+  // guard: เฉพาะ admin เท่านั้น
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session?.user?.isAdmin) {
+      router.replace('/dashboard')
+      return
+    }
+    fetchPeriods()
+  }, [session, status, router])
 
   async function fetchPeriods() {
     const { data } = await supabase
@@ -77,6 +87,14 @@ export default function PayrollPeriodsPage() {
     daily_1: 'รายวัน งวด 1',
     daily_2: 'รายวัน งวด 2',
     monthly: 'รายเดือน',
+  }
+
+  if (status === 'loading' || !session?.user?.isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-400">กำลังตรวจสอบสิทธิ์...</p>
+      </div>
+    )
   }
 
   return (

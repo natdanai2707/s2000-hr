@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -22,9 +23,11 @@ interface Project {
 }
 
 export default function SiteManagePage() {
+  const { data: session, status } = useSession()
   const router = useRouter()
   const [sites, setSites] = useState<SiteLocation[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingSite, setEditingSite] = useState<SiteLocation | null>(null)
   const [getting, setGetting] = useState(false)
@@ -37,23 +40,32 @@ export default function SiteManagePage() {
   })
   const [submitting, setSubmitting] = useState(false)
 
+  // guard: เฉพาะ admin เท่านั้น
   useEffect(() => {
+    if (status === 'loading') return
+    if (!session?.user?.isAdmin) {
+      router.replace('/dashboard')
+      return
+    }
     fetchData()
-  }, [])
+  }, [session, status, router])
 
   async function fetchData() {
-    const { data: sitesData } = await supabase
-      .from('site_locations')
-      .select('*, project:projects(project_code, project_name)')
-      .order('name')
-    setSites(sitesData || [])
-
-    const { data: projectsData } = await supabase
-      .from('projects')
-      .select('id, project_code, project_name')
-      .eq('is_active', true)
-      .order('project_code')
-    setProjects(projectsData || [])
+    setLoading(true)
+    const [sitesRes, projectsRes] = await Promise.all([
+      supabase
+        .from('site_locations')
+        .select('*, project:projects(project_code, project_name)')
+        .order('name'),
+      supabase
+        .from('projects')
+        .select('id, project_code, project_name')
+        .eq('is_active', true)
+        .order('project_code'),
+    ])
+    setSites(sitesRes.data || [])
+    setProjects(projectsRes.data || [])
+    setLoading(false)
   }
 
   function handleEdit(site: SiteLocation) {
@@ -119,6 +131,14 @@ export default function SiteManagePage() {
   async function toggleActive(site: SiteLocation) {
     await supabase.from('site_locations').update({ is_active: !site.is_active }).eq('id', site.id)
     await fetchData()
+  }
+
+  if (status === 'loading' || !session?.user?.isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-400">กำลังตรวจสอบสิทธิ์...</p>
+      </div>
+    )
   }
 
   if (showForm) {
@@ -226,7 +246,9 @@ export default function SiteManagePage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-3">
-        {sites.length === 0 ? (
+        {loading ? (
+          <p className="text-center text-gray-400 text-sm py-8">กำลังโหลด...</p>
+        ) : sites.length === 0 ? (
           <div className="bg-white rounded-xl p-6 text-center text-gray-400">
             ยังไม่มีไซต์งาน
           </div>

@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { LeaveType } from '@/lib/types'
+import { todayISO, daysBetweenInclusive, eachDateInclusive } from '@/lib/date'
 
 interface LeaveQuota {
   sick_leave_quota: number
@@ -87,19 +88,12 @@ export default function NewLeavePage() {
   }
 
   function calcDays() {
-    if (!form.start_date || !form.end_date) return 0
-    const start = new Date(form.start_date)
-    const end = new Date(form.end_date)
-    const diff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
-    return diff > 0 ? diff : 0
+    return daysBetweenInclusive(form.start_date, form.end_date)
   }
 
   function checkHolidayConflict(): string | null {
     if (!form.start_date || !form.end_date) return null
-    const start = new Date(form.start_date + 'T12:00:00')
-    const end = new Date(form.end_date + 'T12:00:00')
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0]
+    for (const dateStr of eachDateInclusive(form.start_date, form.end_date)) {
       if (holidays.includes(dateStr)) {
         return dateStr
       }
@@ -116,7 +110,7 @@ export default function NewLeavePage() {
       .lte('start_date', form.start_date)
       .gte('end_date', form.start_date)
       .limit(1)
-      .single()
+      .maybeSingle()
     return data ? data.period_name : null
   }
 
@@ -170,7 +164,7 @@ export default function NewLeavePage() {
 
     setSubmitting(true)
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = todayISO()
     const payload = {
       employee_id: session.user.employeeId,
       leave_type_id: form.leave_type_id,

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { todayISO, formatThaiTime } from '@/lib/date'
 
 interface SiteLocation {
   id: string
@@ -33,7 +34,7 @@ function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): n
 }
 
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+  return formatThaiTime(iso)
 }
 
 function formatDistance(m: number) {
@@ -62,7 +63,7 @@ export default function AttendancePage() {
   const [selectedSite, setSelectedSite] = useState<string>('')
   const [note, setNote] = useState('')
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayISO()
 
   useEffect(() => {
     if (session?.user?.employeeId) {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { currentMonthISO, monthRange } from '@/lib/date'
 
 type TabType = 'all' | 'leave' | 'ot' | 'worklog'
 
@@ -15,7 +16,7 @@ export default function RequestsPage() {
   const [otRequests, setOtRequests] = useState<any[]>([])
   const [workLogs, setWorkLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [filterMonth, setFilterMonth] = useState(currentMonthISO())
 
   useEffect(() => {
     if (session?.user?.employeeId) fetchAll()
@@ -23,8 +24,7 @@ export default function RequestsPage() {
 
   async function fetchAll() {
     setLoading(true)
-    const start = `${filterMonth}-01`
-    const end = `${filterMonth}-31`
+    const { start, end } = monthRange(filterMonth)
 
     const [leavesRes, otRes, logsRes] = await Promise.all([
       supabase

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { currentMonthISO, monthRange } from '@/lib/date'
 
 export default function LeaveListPage() {
   const { data: session } = useSession()
@@ -11,7 +12,7 @@ export default function LeaveListPage() {
   const [requests, setRequests] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('all')
-  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [filterMonth, setFilterMonth] = useState(currentMonthISO())
 
   useEffect(() => {
     fetchRequests()
@@ -19,11 +20,12 @@ export default function LeaveListPage() {
 
   async function fetchRequests() {
     setLoading(true)
+    const { start, end } = monthRange(filterMonth)
     let query = supabase
       .from('leave_requests')
       .select('*, employee:employees(employee_code, name, position), leave_type:leave_types(name, code)')
-      .gte('start_date', `${filterMonth}-01`)
-      .lte('start_date', `${filterMonth}-31`)
+      .gte('start_date', start)
+      .lte('start_date', end)
       .order('created_at', { ascending: false })
 
     if (filterStatus !== 'all') {

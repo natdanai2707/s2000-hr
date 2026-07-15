@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { todayISO } from '@/lib/date'
 
 export default function OTRequestPage() {
   const { data: session } = useSession()
   const router = useRouter()
   const [holidays, setHolidays] = useState<string[]>([])
   const [form, setForm] = useState({
-    request_date: new Date().toISOString().split('T')[0],
+    request_date: todayISO(),
     ot_start: '',
     ot_end: '',
     day_type: 'normal',
@@ -93,7 +94,7 @@ export default function OTRequestPage() {
       .lte('start_date', form.request_date)
       .gte('end_date', form.request_date)
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (locked) {
       return setError(`รอบ "${locked.period_name}" ปิดแล้ว ไม่สามารถยื่น OT ย้อนหลังได้`)

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { todayISO, formatThaiDate } from '@/lib/date'
 
 export default function CalendarDayPage() {
   const { data: session } = useSession()
@@ -37,13 +38,13 @@ export default function CalendarDayPage() {
         .gte('end_date', dateStr)
         .neq('status', 'cancelled')
         .limit(1)
-        .single(),
+        .maybeSingle(),
       supabase
         .from('holidays')
         .select('*')
         .eq('date', dateStr)
         .eq('is_active', true)
-        .single(),
+        .maybeSingle(),
     ])
 
     setWorkLogs(logsRes.data || [])
@@ -52,9 +53,8 @@ export default function CalendarDayPage() {
     setLoading(false)
   }
 
-  const dateObj = new Date(dateStr + 'T12:00:00')
-  const displayDate = dateObj.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-  const todayStr = new Date().toISOString().split('T')[0]
+  const displayDate = formatThaiDate(dateStr, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  const todayStr = todayISO()
   const isPastOrToday = dateStr <= todayStr
 
   const statusColor: Record<string, string> = {

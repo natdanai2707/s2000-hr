@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Project, WorkLog } from '@/lib/types'
+import { todayISO, currentMonthISO, monthRange, formatThaiDate } from '@/lib/date'
 
 interface WorkLogEntry {
   id?: string
@@ -30,7 +31,7 @@ const emptyEntry = (): WorkLogEntry => ({
   water_allowance: '',
   daily_allowance: '',
   notes: '',
-  log_date: new Date().toISOString().split('T')[0],
+  log_date: todayISO(),
 })
 
 export default function WorkLogPage() {
@@ -43,9 +44,7 @@ export default function WorkLogPage() {
   const [entry, setEntry] = useState<WorkLogEntry>(emptyEntry())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [filterMonth, setFilterMonth] = useState(
-    new Date().toISOString().slice(0, 7)
-  )
+  const [filterMonth, setFilterMonth] = useState(currentMonthISO())
 
   useEffect(() => {
     fetchProjects()
@@ -65,14 +64,7 @@ export default function WorkLogPage() {
   }
 
   async function fetchLogs() {
-    const startDate = `${filterMonth}-01`
-    const endDate = new Date(
-      parseInt(filterMonth.slice(0, 4)),
-      parseInt(filterMonth.slice(5, 7)),
-      0
-    )
-      .toISOString()
-      .split('T')[0]
+    const { start: startDate, end: endDate } = monthRange(filterMonth)
 
     const { data } = await supabase
       .from('work_logs')
@@ -366,7 +358,7 @@ export default function WorkLogPage() {
           Object.entries(grouped).map(([date, dayLogs]) => (
             <div key={date}>
               <p className="text-xs font-semibold text-gray-500 mb-2">
-                {new Date(date).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                {formatThaiDate(date, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </p>
               <div className="space-y-2">
                 {dayLogs.map((log: any) => (

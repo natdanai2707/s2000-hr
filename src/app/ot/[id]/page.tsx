@@ -33,8 +33,8 @@ export default function OTApprovePage() {
         .select('level')
         .eq('employee_id', data.employee_id)
         .eq('approver_id', session.user.approverId)
-        .single()
-      setMyLevel(chain?.level || null)
+        .maybeSingle()
+      setMyLevel(chain?.level ?? null)
     }
     setLoading(false)
   }
@@ -59,7 +59,7 @@ export default function OTApprovePage() {
         .select('level')
         .eq('employee_id', request.employee_id)
         .eq('level', myLevel + 1)
-        .single()
+        .maybeSingle()
 
       if (nextChain) {
         await supabase.from('ot_requests').update({ current_approval_level: myLevel + 1, updated_at: new Date().toISOString() }).eq('id', request.id)
