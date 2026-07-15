@@ -4,26 +4,37 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { currentMonthISO, monthRange } from '@/lib/date'
+import { StatusChip, EmptyState, PageHeader } from '@/components/ui'
 
 export default function LeaveListPage() {
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const router = useRouter()
   const [requests, setRequests] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('all')
-  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [filterMonth, setFilterMonth] = useState(currentMonthISO())
+
+  // guard: หน้านี้เป็นมุมมองหัวหน้า/HR (เห็นคำขอของทุกคน)
+  const canView = !!(session?.user?.approverId || session?.user?.isAdmin)
 
   useEffect(() => {
+    if (status === 'loading') return
+    if (!canView) {
+      router.replace('/dashboard')
+      return
+    }
     fetchRequests()
-  }, [filterStatus, filterMonth])
+  }, [filterStatus, filterMonth, status, canView, router])
 
   async function fetchRequests() {
     setLoading(true)
+    const { start, end } = monthRange(filterMonth)
     let query = supabase
       .from('leave_requests')
       .select('*, employee:employees(employee_code, name, position), leave_type:leave_types(name, code)')
-      .gte('start_date', `${filterMonth}-01`)
-      .lte('start_date', `${filterMonth}-31`)
+      .gte('start_date', start)
+      .lte('start_date', end)
       .order('created_at', { ascending: false })
 
     if (filterStatus !== 'all') {
@@ -49,12 +60,17 @@ export default function LeaveListPage() {
     cancelled: 'bg-gray-100 text-gray-600',
   }
 
+  if (status === 'loading' || !canView) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-400">กำลังโหลด...</p>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-400">←</button>
-        <h1 className="font-semibold text-gray-800">คำขอลาทั้งหมด</h1>
-      </div>
+      <PageHeader title="คำขอลาทั้งหมด" subtitle="มุมมองหัวหน้า/HR" />
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
 
@@ -92,7 +108,7 @@ export default function LeaveListPage() {
         {loading ? (
           <p className="text-center text-gray-400 py-8">กำลังโหลด...</p>
         ) : requests.length === 0 ? (
-          <p className="text-center text-gray-400 py-8">ไม่มีคำขอในช่วงนี้</p>
+          <EmptyState icon="🗂️" title="ไม่มีคำขอลาในช่วงนี้" hint="ลองเปลี่ยนเดือนหรือสถานะด้านบน" />
         ) : (
           <div className="space-y-2">
             {requests.map(req => (
@@ -116,9 +132,7 @@ export default function LeaveListPage() {
                     </p>
                     {req.reason && <p className="text-xs text-gray-400 mt-0.5">{req.reason}</p>}
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${statusColor[req.status]}`}>
-                    {statusLabel[req.status]}
-                  </span>
+                  <StatusChip status={req.status} />
                 </div>
               </div>
             ))}

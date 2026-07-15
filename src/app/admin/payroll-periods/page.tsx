@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -16,6 +17,7 @@ interface PayrollPeriod {
 }
 
 export default function PayrollPeriodsPage() {
+  const { data: session, status } = useSession()
   const router = useRouter()
   const [periods, setPeriods] = useState<PayrollPeriod[]>([])
   const [loading, setLoading] = useState(true)
@@ -27,8 +29,17 @@ export default function PayrollPeriodsPage() {
     period_type: 'daily_1',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
 
-  useEffect(() => { fetchPeriods() }, [])
+  // guard: เฉพาะ admin เท่านั้น
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session?.user?.isAdmin) {
+      router.replace('/dashboard')
+      return
+    }
+    fetchPeriods()
+  }, [session, status, router])
 
   async function fetchPeriods() {
     const { data } = await supabase
@@ -47,36 +58,63 @@ export default function PayrollPeriodsPage() {
     )
     if (!confirm) return
 
-    await supabase
-      .from('payroll_periods')
-      .update({
-        is_locked: !period.is_locked,
-        locked_at: !period.is_locked ? new Date().toISOString() : null,
-      })
-      .eq('id', period.id)
-    await fetchPeriods()
+    try {
+      const { error } = await supabase
+        .from('payroll_periods')
+        .update({
+          is_locked: !period.is_locked,
+          locked_at: !period.is_locked ? new Date().toISOString() : null,
+        })
+        .eq('id', period.id)
+      if (error) throw error
+      await fetchPeriods()
+    } catch (e) {
+      console.error('toggle lock error:', e)
+      alert('เปลี่ยนสถานะรอบไม่สำเร็จ กรุณาลองใหม่')
+    }
   }
 
   async function handleAdd() {
-    if (!form.period_name || !form.start_date || !form.end_date) return
+    if (!form.period_name || !form.start_date || !form.end_date) {
+      return setFormError('กรุณากรอกชื่อรอบและช่วงวันที่ให้ครบ')
+    }
+    if (form.end_date < form.start_date) {
+      return setFormError('วันสิ้นสุดต้องไม่มาก่อนวันเริ่มต้น')
+    }
     setSubmitting(true)
-    await supabase.from('payroll_periods').insert({
-      period_name: form.period_name,
-      start_date: form.start_date,
-      end_date: form.end_date,
-      period_type: form.period_type,
-      is_locked: false,
-    })
-    setForm({ period_name: '', start_date: '', end_date: '', period_type: 'daily_1' })
-    setShowForm(false)
-    await fetchPeriods()
-    setSubmitting(false)
+    setFormError('')
+    try {
+      const { error } = await supabase.from('payroll_periods').insert({
+        period_name: form.period_name,
+        start_date: form.start_date,
+        end_date: form.end_date,
+        period_type: form.period_type,
+        is_locked: false,
+      })
+      if (error) throw error
+      setForm({ period_name: '', start_date: '', end_date: '', period_type: 'daily_1' })
+      setShowForm(false)
+      await fetchPeriods()
+    } catch (e) {
+      console.error('add period error:', e)
+      setFormError('เพิ่มรอบไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const typeLabel: Record<string, string> = {
     daily_1: 'รายวัน งวด 1',
     daily_2: 'รายวัน งวด 2',
     monthly: 'รายเดือน',
+  }
+
+  if (status === 'loading' || !session?.user?.isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-400">กำลังตรวจสอบสิทธิ์...</p>
+      </div>
+    )
   }
 
   return (
@@ -123,6 +161,11 @@ export default function PayrollPeriodsPage() {
                 <input type="date" value={form.end_date} min={form.start_date} onChange={e => setForm({ ...form, end_date: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
               </div>
             </div>
+            {formError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <p className="text-red-600 text-sm">{formError}</p>
+              </div>
+            )}
             <button onClick={handleAdd} disabled={submitting} className="w-full bg-blue-600 text-white rounded-lg py-2 text-sm disabled:opacity-50">
               {submitting ? 'กำลังบันทึก...' : 'เพิ่มรอบ'}
             </button>

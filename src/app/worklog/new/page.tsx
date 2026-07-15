@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Project, WorkLog } from '@/lib/types'
+import { todayISO, currentMonthISO, monthRange, formatThaiDate } from '@/lib/date'
+import { Button, FieldError, PageHeader, EmptyState } from '@/components/ui'
 
 interface WorkLogEntry {
   id?: string
@@ -30,12 +31,11 @@ const emptyEntry = (): WorkLogEntry => ({
   water_allowance: '',
   daily_allowance: '',
   notes: '',
-  log_date: new Date().toISOString().split('T')[0],
+  log_date: todayISO(),
 })
 
 export default function WorkLogPage() {
   const { data: session } = useSession()
-  const router = useRouter()
   const [projects, setProjects] = useState<Project[]>([])
   const [logs, setLogs] = useState<WorkLog[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -43,9 +43,8 @@ export default function WorkLogPage() {
   const [entry, setEntry] = useState<WorkLogEntry>(emptyEntry())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const [filterMonth, setFilterMonth] = useState(
-    new Date().toISOString().slice(0, 7)
-  )
+  const [fieldErrors, setFieldErrors] = useState<{ desc?: string; date?: string }>({})
+  const [filterMonth, setFilterMonth] = useState(currentMonthISO())
 
   useEffect(() => {
     fetchProjects()
@@ -65,14 +64,7 @@ export default function WorkLogPage() {
   }
 
   async function fetchLogs() {
-    const startDate = `${filterMonth}-01`
-    const endDate = new Date(
-      parseInt(filterMonth.slice(0, 4)),
-      parseInt(filterMonth.slice(5, 7)),
-      0
-    )
-      .toISOString()
-      .split('T')[0]
+    const { start: startDate, end: endDate } = monthRange(filterMonth)
 
     const { data } = await supabase
       .from('work_logs')
@@ -99,19 +91,26 @@ export default function WorkLogPage() {
       log_date: log.log_date,
     })
     setEditingId(log.id)
+    setError('')
+    setFieldErrors({})
     setShowForm(true)
   }
 
   function handleNew() {
     setEntry(emptyEntry())
     setEditingId(null)
+    setError('')
+    setFieldErrors({})
     setShowForm(true)
   }
 
   async function handleSubmit() {
     if (!session?.user?.employeeId) return
-    if (!entry.task_description) return setError('กรุณากรอกรายละเอียดงาน')
-    if (!entry.log_date) return setError('กรุณาเลือกวันที่')
+    const fe: { desc?: string; date?: string } = {}
+    if (!entry.task_description) fe.desc = 'กรุณากรอกรายละเอียดงาน'
+    if (!entry.log_date) fe.date = 'กรุณาเลือกวันที่'
+    setFieldErrors(fe)
+    if (fe.desc || fe.date) return
 
     setSubmitting(true)
     setError('')
@@ -171,12 +170,10 @@ export default function WorkLogPage() {
   if (showForm) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
-          <button onClick={() => { setShowForm(false); setEditingId(null) }} className="text-gray-400">←</button>
-          <h1 className="font-semibold text-gray-800">
-            {editingId ? 'แก้ไขรายการงาน' : 'บันทึกการปฏิบัติงาน'}
-          </h1>
-        </div>
+        <PageHeader
+          title={editingId ? 'แก้ไขรายการงาน' : 'บันทึกการปฏิบัติงาน'}
+          onBack={() => { setShowForm(false); setEditingId(null) }}
+        />
 
         <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
@@ -185,9 +182,10 @@ export default function WorkLogPage() {
             <input
               type="date"
               value={entry.log_date}
-              onChange={e => setEntry({ ...entry, log_date: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800"
+              onChange={e => { setEntry({ ...entry, log_date: e.target.value }); setFieldErrors(fe => ({ ...fe, date: undefined })) }}
+              className={`w-full border rounded-lg px-3 py-2.5 min-h-11 text-gray-800 ${fieldErrors.date ? 'border-red-400' : 'border-gray-300'}`}
             />
+            <FieldError message={fieldErrors.date} />
           </div>
 
           <div>
@@ -223,11 +221,12 @@ export default function WorkLogPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">รายละเอียดงาน *</label>
             <textarea
               value={entry.task_description}
-              onChange={e => setEntry({ ...entry, task_description: e.target.value })}
+              onChange={e => { setEntry({ ...entry, task_description: e.target.value }); setFieldErrors(fe => ({ ...fe, desc: undefined })) }}
               rows={3}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800 resize-none"
+              className={`w-full border rounded-lg px-3 py-2.5 text-gray-800 resize-none ${fieldErrors.desc ? 'border-red-400' : 'border-gray-300'}`}
               placeholder="อธิบายงานที่ทำ..."
             />
+            <FieldError message={fieldErrors.desc} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -293,15 +292,15 @@ export default function WorkLogPage() {
             />
           </div>
 
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <p className="text-red-600 text-sm">{error}</p>
+            </div>
+          )}
 
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            className="w-full bg-blue-600 text-white rounded-xl py-3 font-medium disabled:opacity-50"
-          >
+          <Button variant="primary" fullWidth onClick={handleSubmit} disabled={submitting} className="py-3">
             {submitting ? 'กำลังบันทึก...' : editingId ? 'บันทึกการแก้ไข' : 'บันทึกการปฏิบัติงาน'}
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -309,18 +308,10 @@ export default function WorkLogPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.back()} className="text-gray-400">←</button>
-          <h1 className="font-semibold text-gray-800">บันทึกการปฏิบัติงาน</h1>
-        </div>
-        <button
-          onClick={handleNew}
-          className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg"
-        >
-          + เพิ่มรายการ
-        </button>
-      </div>
+      <PageHeader
+        title="บันทึกการปฏิบัติงาน"
+        right={<Button variant="primary" onClick={handleNew} className="px-3">+ เพิ่มรายการ</Button>}
+      />
 
       <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
 
@@ -359,14 +350,17 @@ export default function WorkLogPage() {
 
         {/* รายการตามวัน */}
         {Object.keys(grouped).length === 0 ? (
-          <div className="bg-white rounded-xl p-6 text-center text-gray-400 text-sm">
-            ยังไม่มีรายการในเดือนนี้
-          </div>
+          <EmptyState
+            icon="🔧"
+            title="ยังไม่มีบันทึกงานในเดือนนี้"
+            hint="กด “เพิ่มรายการ” เพื่อบันทึกงานที่ทำในแต่ละวัน"
+            action={<Button variant="primary" onClick={handleNew}>+ เพิ่มรายการ</Button>}
+          />
         ) : (
           Object.entries(grouped).map(([date, dayLogs]) => (
             <div key={date}>
               <p className="text-xs font-semibold text-gray-500 mb-2">
-                {new Date(date).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                {formatThaiDate(date, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </p>
               <div className="space-y-2">
                 {dayLogs.map((log: any) => (

@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       .from('notified_users')
       .select('line_user_id')
       .eq('line_user_id', lineUserId)
-      .single()
+      .maybeSingle()
 
     if (existing) {
       return NextResponse.json({ success: true, skipped: true })

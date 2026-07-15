@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { todayISO, formatThaiTime } from '@/lib/date'
+import { BottomNav } from '@/components/ui'
 
 interface SiteLocation {
   id: string
@@ -20,6 +22,7 @@ interface AttendanceLog {
   check_out: string | null
   site_location: SiteLocation
   note: string | null
+  selfie_url?: string | null
 }
 
 function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -33,7 +36,7 @@ function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): n
 }
 
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+  return formatThaiTime(iso)
 }
 
 function formatDistance(m: number) {
@@ -61,8 +64,11 @@ export default function AttendancePage() {
   const [processing, setProcessing] = useState(false)
   const [selectedSite, setSelectedSite] = useState<string>('')
   const [note, setNote] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [selfie, setSelfie] = useState<File | null>(null)
+  const [selfiePreview, setSelfiePreview] = useState<string>('')
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayISO()
 
   useEffect(() => {
     if (session?.user?.employeeId) {
@@ -73,34 +79,43 @@ export default function AttendancePage() {
 
   async function fetchData() {
     setLoading(true)
+    setActionError('')
     const startOfDay = `${today}T00:00:00+07:00`
     const endOfDay = `${today}T23:59:59+07:00`
 
-    const [sitesRes, logsRes] = await Promise.all([
-      supabase
-        .from('site_locations')
-        .select('*, project:projects(project_code, project_name)')
-        .eq('is_active', true)
-        .order('name'),
-      supabase
-        .from('attendance_logs')
-        .select('*, site_location:site_locations(*, project:projects(project_code, project_name))')
-        .eq('employee_id', session!.user.employeeId!)
-        .gte('check_in', startOfDay)
-        .lte('check_in', endOfDay)
-        .order('check_in', { ascending: false }),
-    ])
+    try {
+      const [sitesRes, logsRes] = await Promise.all([
+        supabase
+          .from('site_locations')
+          .select('*, project:projects(project_code, project_name)')
+          .eq('is_active', true)
+          .order('name'),
+        supabase
+          .from('attendance_logs')
+          .select('*, site_location:site_locations(*, project:projects(project_code, project_name))')
+          .eq('employee_id', session!.user.employeeId!)
+          .gte('check_in', startOfDay)
+          .lte('check_in', endOfDay)
+          .order('check_in', { ascending: false }),
+      ])
 
-    setSites(sitesRes.data || [])
+      if (sitesRes.error) throw sitesRes.error
+      if (logsRes.error) throw logsRes.error
 
-    const logs = (logsRes.data || []) as AttendanceLog[]
-    setTodayLogs(logs)
+      setSites(sitesRes.data || [])
 
-    // หา log ที่ยังไม่ได้เช็คเอาท์
-    const active = logs.find(l => !l.check_out) || null
-    setActiveLog(active)
+      const logs = (logsRes.data || []) as AttendanceLog[]
+      setTodayLogs(logs)
 
-    setLoading(false)
+      // หา log ที่ยังไม่ได้เช็คเอาท์
+      const active = logs.find(l => !l.check_out) || null
+      setActiveLog(active)
+    } catch (e) {
+      console.error('attendance fetchData error:', e)
+      setActionError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
+    }
   }
 
   function getLocation() {
@@ -138,35 +153,89 @@ export default function AttendancePage() {
     ? distanceToSelected <= selectedSiteObj.radius_meters
     : false
 
+  function onSelfieChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSelfie(file)
+    if (selfiePreview) URL.revokeObjectURL(selfiePreview)
+    setSelfiePreview(URL.createObjectURL(file))
+  }
+
+  // อัปโหลดรูป selfie ขึ้น Supabase Storage คืน public url (คืน null ถ้าพลาด)
+  async function uploadSelfie(file: File, employeeId: string): Promise<string | null> {
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `${employeeId}/${today}-${Date.now()}.${ext}`
+      const { error } = await supabase.storage
+        .from('attendance-selfies')
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (error) throw error
+      const { data } = supabase.storage.from('attendance-selfies').getPublicUrl(path)
+      return data.publicUrl
+    } catch (e) {
+      console.error('selfie upload error:', e)
+      return null
+    }
+  }
+
   async function handleCheckIn() {
     if (!session?.user?.employeeId || !selectedSite || !myPosition || !isInRange) return
     setProcessing(true)
-    await supabase.from('attendance_logs').insert({
-      employee_id: session.user.employeeId,
-      site_location_id: selectedSite,
-      check_in: new Date().toISOString(),
-      check_in_lat: myPosition.lat,
-      check_in_lng: myPosition.lng,
-      note: note || null,
-    })
-    await fetchData()
-    setNote('')
-    setProcessing(false)
+    setActionError('')
+    try {
+      // อัปโหลด selfie ก่อน (ถ้ามี) — ถ้าพลาดยังเช็คอินต่อได้
+      let selfieUrl: string | null = null
+      if (selfie) {
+        selfieUrl = await uploadSelfie(selfie, session.user.employeeId)
+        if (!selfieUrl) {
+          setActionError('อัปโหลดรูปไม่สำเร็จ แต่ระบบจะบันทึกเช็คอินให้ (รูปไม่ถูกบันทึก)')
+        }
+      }
+
+      const { error } = await supabase.from('attendance_logs').insert({
+        employee_id: session.user.employeeId,
+        site_location_id: selectedSite,
+        check_in: new Date().toISOString(),
+        check_in_lat: myPosition.lat,
+        check_in_lng: myPosition.lng,
+        note: note || null,
+        selfie_url: selfieUrl,
+      })
+      if (error) throw error
+      setNote('')
+      setSelfie(null)
+      if (selfiePreview) URL.revokeObjectURL(selfiePreview)
+      setSelfiePreview('')
+      await fetchData()
+    } catch (e) {
+      console.error('check-in error:', e)
+      setActionError('เช็คอินไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setProcessing(false)
+    }
   }
 
   async function handleCheckOut() {
     if (!activeLog || !myPosition) return
     setProcessing(true)
-    await supabase
-      .from('attendance_logs')
-      .update({
-        check_out: new Date().toISOString(),
-        check_out_lat: myPosition.lat,
-        check_out_lng: myPosition.lng,
-      })
-      .eq('id', activeLog.id)
-    await fetchData()
-    setProcessing(false)
+    setActionError('')
+    try {
+      const { error } = await supabase
+        .from('attendance_logs')
+        .update({
+          check_out: new Date().toISOString(),
+          check_out_lat: myPosition.lat,
+          check_out_lng: myPosition.lng,
+        })
+        .eq('id', activeLog.id)
+      if (error) throw error
+      await fetchData()
+    } catch (e) {
+      console.error('check-out error:', e)
+      setActionError('เช็คเอาท์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setProcessing(false)
+    }
   }
 
   if (loading) {
@@ -189,7 +258,7 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
+      <div className="max-w-lg mx-auto px-4 py-6 pb-24 space-y-4">
 
         {/* GPS Status */}
         <div className={`rounded-xl p-3 flex items-center gap-2 text-sm ${myPosition ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
@@ -203,6 +272,12 @@ export default function AttendancePage() {
             <button onClick={getLocation} className="underline text-xs shrink-0">ลองใหม่</button>
           )}
         </div>
+
+        {actionError && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+            <p className="text-red-600 text-sm">{actionError}</p>
+          </div>
+        )}
 
         {/* Active log - รออยู่ระหว่างเช็คอิน */}
         {activeLog && (
@@ -261,11 +336,32 @@ export default function AttendancePage() {
               })}
             </div>
 
+            {/* selfie ตอนเช็คอิน */}
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">รูปเซลฟี่ตอนเช็คอิน (แนะนำ)</p>
+              {selfiePreview ? (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={selfiePreview} alt="selfie" className="w-full h-48 object-cover rounded-xl border border-gray-200" />
+                  <label className="absolute bottom-2 right-2 bg-white/90 text-gray-700 text-xs px-3 py-2 rounded-lg border border-gray-200 cursor-pointer min-h-11 inline-flex items-center">
+                    ถ่ายใหม่
+                    <input type="file" accept="image/*" capture="user" onChange={onSelfieChange} className="hidden" />
+                  </label>
+                </div>
+              ) : (
+                <label className="w-full border-2 border-dashed border-gray-300 rounded-xl py-6 flex flex-col items-center justify-center text-gray-400 cursor-pointer min-h-24">
+                  <span className="text-3xl">📷</span>
+                  <span className="text-sm mt-1">แตะเพื่อถ่ายรูป</span>
+                  <input type="file" accept="image/*" capture="user" onChange={onSelfieChange} className="hidden" />
+                </label>
+              )}
+            </div>
+
             <input
               type="text"
               value={note}
               onChange={e => setNote(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 min-h-11 text-sm text-gray-800"
               placeholder="หมายเหตุ (ถ้ามี)"
             />
 
@@ -308,6 +404,10 @@ export default function AttendancePage() {
                       </div>
                       {log.note && <p className="text-xs text-gray-400 mt-0.5">{log.note}</p>}
                     </div>
+                    {log.selfie_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={log.selfie_url} alt="selfie" className="w-12 h-12 rounded-lg object-cover border border-gray-100 ml-2 shrink-0" />
+                    )}
                   </div>
                 </div>
               ))}
@@ -321,6 +421,8 @@ export default function AttendancePage() {
           </div>
         )}
       </div>
+
+      <BottomNav />
     </div>
   )
 }

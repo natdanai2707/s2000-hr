@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { todayISO, monthRange, eachDateInclusive, formatThaiDate } from '@/lib/date'
+import { BottomNav } from '@/components/ui'
 
 interface DayData {
   hasWorkLog: boolean
@@ -35,14 +37,13 @@ export default function CalendarPage() {
 
   async function fetchMonthData() {
     setLoading(true)
-    const startDate = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-01`
-    const lastDay = new Date(viewYear, viewMonth + 1, 0).getDate()
-    const endDate = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    const ym = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`
+    const { start: startDate, end: endDate } = monthRange(ym)
 
     const [logsRes, leavesRes, holidaysRes] = await Promise.all([
       supabase
         .from('work_logs')
-        .select('*, leave_type:leave_types(name)')
+        .select('*, project:projects(project_code, project_name)')
         .eq('employee_id', session!.user.employeeId!)
         .gte('log_date', startDate)
         .lte('log_date', endDate),
@@ -71,10 +72,7 @@ export default function CalendarPage() {
 
     // leave requests
     for (const leave of leavesRes.data || []) {
-      const start = new Date(leave.start_date)
-      const end = new Date(leave.end_date)
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0]
+      for (const dateStr of eachDateInclusive(leave.start_date, leave.end_date)) {
         if (!data[dateStr]) data[dateStr] = emptyDay()
         data[dateStr].hasLeave = true
         data[dateStr].leaveStatus = leave.status
@@ -129,7 +127,7 @@ export default function CalendarPage() {
 
   const firstDay = new Date(viewYear, viewMonth, 1).getDay()
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate()
-  const todayStr = today.toISOString().split('T')[0]
+  const todayStr = todayISO()
 
   const cells: (number | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
   while (cells.length % 7 !== 0) cells.push(null)
@@ -149,8 +147,7 @@ export default function CalendarPage() {
   }
 
   if (showDayModal && selectedDate && selectedData) {
-    const dateObj = new Date(selectedDate + 'T12:00:00')
-    const displayDate = dateObj.toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    const displayDate = formatThaiDate(selectedDate, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const isPast = selectedDate < todayStr
     const isToday = selectedDate === todayStr
 
@@ -276,7 +273,7 @@ export default function CalendarPage() {
         <h1 className="font-semibold text-gray-800">ปฏิทิน</h1>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-4">
+      <div className="max-w-lg mx-auto px-4 py-4 pb-24">
 
         {/* Month Navigation */}
         <div className="flex items-center justify-between mb-4">
@@ -354,6 +351,8 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+
+      <BottomNav />
     </div>
   )
 }

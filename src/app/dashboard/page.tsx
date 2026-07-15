@@ -5,6 +5,8 @@ import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { LeaveRequest } from '@/lib/types'
+import { monthRange, eachDateInclusive } from '@/lib/date'
+import { StatusChip, BottomNav, EmptyState } from '@/components/ui'
 
 interface DayData {
   hasWorkLog: boolean
@@ -19,10 +21,13 @@ export default function DashboardPage() {
   const router = useRouter()
   const [myRequests, setMyRequests] = useState<LeaveRequest[]>([])
   const [pendingApprovals, setPendingApprovals] = useState<LeaveRequest[]>([])
+  const [pendingOt, setPendingOt] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [dayData, setDayData] = useState<Record<string, DayData>>({})
   const [calLoading, setCalLoading] = useState(true)
   const [showForceLogout, setShowForceLogout] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [copiedLineId, setCopiedLineId] = useState(false)
 
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -55,75 +60,107 @@ export default function DashboardPage() {
 
   async function fetchData() {
     setLoading(true)
-    const { data: requests } = await supabase
-      .from('leave_requests')
-      .select('*, leave_type:leave_types(*)')
-      .eq('employee_id', session!.user.employeeId!)
-      .order('created_at', { ascending: false })
-      .limit(5)
-    setMyRequests(requests || [])
+    setLoadError('')
+    try {
+      const { data: requests, error: reqErr } = await supabase
+        .from('leave_requests')
+        .select('*, leave_type:leave_types(*)')
+        .eq('employee_id', session!.user.employeeId!)
+        .order('created_at', { ascending: false })
+        .limit(5)
+      if (reqErr) throw reqErr
+      setMyRequests(requests || [])
 
-    if (session?.user?.approverId) {
-      const { data: chains } = await supabase
-        .from('approval_chains')
-        .select('employee_id, level')
-        .eq('approver_id', session.user.approverId)
-      if (chains && chains.length > 0) {
-        const pendingList: LeaveRequest[] = []
-        for (const chain of chains) {
-          const { data } = await supabase
-            .from('leave_requests')
-            .select('*, employee:employees(*), leave_type:leave_types(*)')
-            .eq('employee_id', chain.employee_id)
-            .eq('status', 'pending')
-            .eq('current_approval_level', chain.level)
-          if (data) pendingList.push(...data)
+      if (session?.user?.approverId) {
+        const { data: chains, error: chErr } = await supabase
+          .from('approval_chains')
+          .select('employee_id, level')
+          .eq('approver_id', session.user.approverId)
+        if (chErr) throw chErr
+
+        // map employee_id -> level ที่ผู้อนุมัติคนนี้ต้องอนุมัติ
+        const levelByEmp = new Map<string, number>()
+        for (const c of chains || []) levelByEmp.set(c.employee_id, c.level)
+        const empIds = [...levelByEmp.keys()]
+
+        if (empIds.length > 0) {
+          // batch query เดียวแทน loop ทีละคน (แก้ปัญหา N+1)
+          // ดึงทั้งคำขอลาและ OT ที่รออนุมัติพร้อมกัน
+          const [leaveRes, otRes] = await Promise.all([
+            supabase
+              .from('leave_requests')
+              .select('*, employee:employees(*), leave_type:leave_types(*)')
+              .in('employee_id', empIds)
+              .eq('status', 'pending'),
+            supabase
+              .from('ot_requests')
+              .select('*, employee:employees(*)')
+              .in('employee_id', empIds)
+              .eq('status', 'pending'),
+          ])
+          if (leaveRes.error) throw leaveRes.error
+          if (otRes.error) throw otRes.error
+
+          // แสดงเฉพาะรายการที่ตรงกับ level ของผู้อนุมัติคนนี้
+          setPendingApprovals(
+            (leaveRes.data || []).filter(r => levelByEmp.get(r.employee_id) === r.current_approval_level)
+          )
+          setPendingOt(
+            (otRes.data || []).filter(r => levelByEmp.get(r.employee_id) === r.current_approval_level)
+          )
+        } else {
+          setPendingApprovals([])
+          setPendingOt([])
         }
-        setPendingApprovals(pendingList)
       }
+    } catch (e) {
+      console.error('fetchData error:', e)
+      setLoadError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   async function fetchCalendarData() {
     setCalLoading(true)
-    const startDate = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-01`
-    const lastDay = new Date(viewYear, viewMonth + 1, 0).getDate()
-    const endDate = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    const ym = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`
+    const { start: startDate, end: endDate } = monthRange(ym)
 
-    const [logsRes, leavesRes, holidaysRes] = await Promise.all([
-      supabase.from('work_logs').select('log_date').eq('employee_id', session!.user.employeeId!).gte('log_date', startDate).lte('log_date', endDate),
-      supabase.from('leave_requests').select('start_date, end_date, status').eq('employee_id', session!.user.employeeId!).gte('start_date', startDate).lte('end_date', endDate),
-      supabase.from('holidays').select('date, name').gte('date', startDate).lte('date', endDate).eq('is_active', true),
-    ])
+    try {
+      const [logsRes, leavesRes, holidaysRes] = await Promise.all([
+        supabase.from('work_logs').select('log_date').eq('employee_id', session!.user.employeeId!).gte('log_date', startDate).lte('log_date', endDate),
+        supabase.from('leave_requests').select('start_date, end_date, status').eq('employee_id', session!.user.employeeId!).gte('start_date', startDate).lte('end_date', endDate),
+        supabase.from('holidays').select('date, name').gte('date', startDate).lte('date', endDate).eq('is_active', true),
+      ])
 
-    const data: Record<string, DayData> = {}
+      const data: Record<string, DayData> = {}
 
-    for (const log of logsRes.data || []) {
-      const d = log.log_date
-      if (!data[d]) data[d] = emptyDay()
-      data[d].hasWorkLog = true
-    }
-
-    for (const leave of leavesRes.data || []) {
-      const start = new Date(leave.start_date + 'T12:00:00')
-      const end = new Date(leave.end_date + 'T12:00:00')
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-        if (!data[dateStr]) data[dateStr] = emptyDay()
-        data[dateStr].hasLeave = true
-        data[dateStr].leaveStatus = leave.status
+      for (const log of logsRes.data || []) {
+        const d = log.log_date
+        if (!data[d]) data[d] = emptyDay()
+        data[d].hasWorkLog = true
       }
-    }
 
-    for (const h of holidaysRes.data || []) {
-      if (!data[h.date]) data[h.date] = emptyDay()
-      data[h.date].isHoliday = true
-      data[h.date].holidayName = h.name
-    }
+      for (const leave of leavesRes.data || []) {
+        for (const dateStr of eachDateInclusive(leave.start_date, leave.end_date)) {
+          if (!data[dateStr]) data[dateStr] = emptyDay()
+          data[dateStr].hasLeave = true
+          data[dateStr].leaveStatus = leave.status
+        }
+      }
 
-    setDayData(data)
-    setCalLoading(false)
+      for (const h of holidaysRes.data || []) {
+        if (!data[h.date]) data[h.date] = emptyDay()
+        data[h.date].isHoliday = true
+        data[h.date].holidayName = h.name
+      }
+
+      setDayData(data)
+    } catch (e) {
+      console.error('fetchCalendarData error:', e)
+    } finally {
+      setCalLoading(false)
+    }
   }
 
   function emptyDay(): DayData {
@@ -161,9 +198,6 @@ export default function DashboardPage() {
   const cells: (number | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
   while (cells.length % 7 !== 0) cells.push(null)
 
-  const statusLabel: Record<string, string> = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก' }
-  const statusColor: Record<string, string> = { pending: 'bg-yellow-100 text-yellow-800', approved: 'bg-green-100 text-green-800', rejected: 'bg-red-100 text-red-800', cancelled: 'bg-gray-100 text-gray-600' }
-
   if (status === 'loading' || loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
@@ -184,16 +218,43 @@ export default function DashboardPage() {
   }
 
   if (!session?.user?.employeeId) {
+    const lineId = session?.user?.lineUserId || ''
+    const copyLineId = async () => {
+      try {
+        await navigator.clipboard.writeText(lineId)
+        setCopiedLineId(true)
+        setTimeout(() => setCopiedLineId(false), 2000)
+      } catch {
+        setCopiedLineId(false)
+      }
+    }
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center px-4">
-          <p className="text-gray-600 mb-2">บัญชี Line ของคุณยังไม่ได้ผูกกับระบบ</p>
-          <p className="text-sm text-gray-400 mb-4">กรุณาติดต่อ HR เพื่อลงทะเบียน</p>
-          <p className="text-xs text-gray-400">Line ID ของคุณ:</p>
-          <p className="text-sm font-mono bg-gray-100 px-3 py-2 rounded mt-1 select-all break-all">{session?.user?.lineUserId}</p>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-100 p-6 text-center">
+          <div className="text-4xl mb-3">👋</div>
+          <p className="text-gray-800 font-semibold mb-1">ยินดีต้อนรับสู่ S-2000 HR</p>
+          <p className="text-sm text-gray-500 mb-4">
+            บัญชี LINE ของคุณยังไม่ได้ลงทะเบียน<br />
+            เราแจ้ง HR ให้เพิ่มคุณเข้าระบบแล้ว
+          </p>
+
+          <div className="bg-gray-50 rounded-xl p-3 text-left">
+            <p className="text-xs text-gray-400 mb-1">Line ID ของคุณ (ส่งให้ HR):</p>
+            <p className="text-sm font-mono bg-white border border-gray-200 px-3 py-2 rounded break-all select-all">{lineId}</p>
+            <button
+              onClick={copyLineId}
+              className="mt-2 w-full bg-brand-600 text-white rounded-lg py-2.5 min-h-11 text-sm font-medium"
+            >
+              {copiedLineId ? '✓ คัดลอกแล้ว' : '📋 คัดลอก Line ID'}
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400 mt-4">
+            เมื่อ HR ลงทะเบียนเสร็จ ให้เข้าสู่ระบบใหม่อีกครั้ง
+          </p>
           <button
             onClick={() => signOut({ callbackUrl: '/login' })}
-            className="mt-4 text-xs text-gray-400 underline"
+            className="mt-3 text-xs text-gray-400 underline min-h-11"
           >
             ออกจากระบบ
           </button>
@@ -213,7 +274,14 @@ export default function DashboardPage() {
         <button onClick={() => signOut({ callbackUrl: '/login' })} className="text-xs text-gray-400">ออกจากระบบ</button>
       </div>
 
-      <div className="max-w-lg mx-auto px-3 py-3 space-y-4">
+      <div className="max-w-lg mx-auto px-3 py-3 pb-24 space-y-4">
+
+        {loadError && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between">
+            <p className="text-red-600 text-sm">{loadError}</p>
+            <button onClick={() => fetchData()} className="text-red-600 text-sm underline shrink-0 ml-2">ลองใหม่</button>
+          </div>
+        )}
 
         {/* ปฏิทิน */}
         <div className="bg-white rounded-2xl p-3 shadow-sm">
@@ -301,6 +369,26 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Pending OT Approvals */}
+        {pendingOt.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">OT รออนุมัติจากคุณ ({pendingOt.length})</h2>
+            <div className="space-y-2">
+              {pendingOt.map((req) => (
+                <div key={req.id} onClick={() => router.push(`/ot/${req.id}`)} className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 cursor-pointer hover:bg-yellow-100 transition">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-800 text-sm">{req.employee?.name}</p>
+                      <p className="text-xs text-gray-500">⏰ OT {req.request_date} · {req.ot_hours} ชม. ({req.multiplier}x)</p>
+                    </div>
+                    <span className="text-yellow-600 text-xs">อนุมัติ →</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Quick Actions */}
         <div className="grid grid-cols-3 gap-2">
           <button onClick={() => router.push('/leave/new')} className="bg-[#06C755] text-white rounded-xl p-3 text-left">
@@ -330,14 +418,34 @@ export default function DashboardPage() {
           </button>
         </div>
 
+        {/* ทางลัดเพิ่มเติม */}
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => router.push('/payslip')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
+            <span className="text-xl">🧾</span>
+            <div>
+              <p className="font-medium text-xs text-gray-800">สลิปเงินเดือน</p>
+              <p className="text-xs text-gray-400">ดูย้อนหลัง</p>
+            </div>
+          </button>
+          {session.user.approverId && (
+            <button onClick={() => router.push('/team')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
+              <span className="text-xl">👥</span>
+              <div>
+                <p className="font-medium text-xs text-gray-800">สรุปทีมวันนี้</p>
+                <p className="text-xs text-gray-400">ใครลา/อยู่ไซต์</p>
+              </div>
+            </button>
+          )}
+        </div>
+
         {/* My Leave Requests */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-gray-700">คำขอลาของฉัน</h2>
-            <button onClick={() => router.push('/leave')} className="text-xs text-blue-500">ดูทั้งหมด</button>
+            <button onClick={() => router.push('/requests')} className="text-xs text-blue-500 min-h-11 px-2">ดูทั้งหมด</button>
           </div>
           {myRequests.length === 0 ? (
-            <div className="bg-white rounded-xl p-4 text-center text-gray-400 text-sm">ยังไม่มีคำขอลา</div>
+            <EmptyState icon="📋" title="ยังไม่มีคำขอลา" hint="กดปุ่ม “ยื่นคำขอลา” ด้านบนเพื่อเริ่มยื่นลา มาสาย หรือขาดงาน" />
           ) : (
             <div className="space-y-2">
               {myRequests.map((req) => (
@@ -347,7 +455,7 @@ export default function DashboardPage() {
                       <p className="font-medium text-gray-800 text-sm">{(req as any).leave_type?.name}</p>
                       <p className="text-xs text-gray-500">{req.start_date}{req.end_date !== req.start_date ? ` ถึง ${req.end_date}` : ''} · {req.total_days} วัน</p>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded-full ${statusColor[req.status]}`}>{statusLabel[req.status]}</span>
+                    <StatusChip status={req.status} />
                   </div>
                 </div>
               ))}
@@ -357,11 +465,13 @@ export default function DashboardPage() {
 
         {/* Admin */}
         {session.user.isAdmin && (
-          <button onClick={() => router.push('/admin')} className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2">
+          <button onClick={() => router.push('/admin')} className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2 min-h-11">
             ⚙️ จัดการระบบ (Admin)
           </button>
         )}
       </div>
+
+      <BottomNav />
     </div>
   )
 }

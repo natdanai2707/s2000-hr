@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import ExcelJS from 'exceljs'
+import { auth } from '@/auth'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,12 @@ const supabase = createClient(
 )
 
 export async function GET(request: NextRequest) {
+  // เฉพาะ HR/Admin เท่านั้นที่ออกรายงานเงินเดือนได้
+  const session = await auth()
+  if (!session?.user?.isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
   const { searchParams } = new URL(request.url)
   const month = searchParams.get('month') // format: 2026-05
   const type = searchParams.get('type') || 'daily' // daily | monthly

@@ -4,13 +4,15 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { todayISO } from '@/lib/date'
+import { Button, FieldError, PageHeader } from '@/components/ui'
 
 export default function OTRequestPage() {
   const { data: session } = useSession()
   const router = useRouter()
   const [holidays, setHolidays] = useState<string[]>([])
   const [form, setForm] = useState({
-    request_date: new Date().toISOString().split('T')[0],
+    request_date: todayISO(),
     ot_start: '',
     ot_end: '',
     day_type: 'normal',
@@ -19,6 +21,7 @@ export default function OTRequestPage() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<{ time?: string; desc?: string }>({})
 
   useEffect(() => {
     fetchHolidays()
@@ -78,12 +81,18 @@ export default function OTRequestPage() {
   }
 
   async function handleSubmit() {
-    if (!form.ot_start || !form.ot_end) return setError('กรุณาระบุเวลา OT')
-    if (!form.work_description) return setError('กรุณาระบุงานที่ทำ')
+    const fe: { time?: string; desc?: string } = {}
+    if (!form.ot_start || !form.ot_end) fe.time = 'กรุณาระบุเวลาเริ่มและสิ้นสุด OT'
+    if (!form.work_description) fe.desc = 'กรุณาระบุงานที่ทำ'
+    setFieldErrors(fe)
+    if (fe.time || fe.desc) return
     if (!session?.user?.employeeId) return
 
+    setError('')
     const otHours = calcOtHours()
-    if (otHours <= 0) return setError('เวลาสิ้นสุดต้องหลังเวลาเริ่มต้น')
+    if (otHours <= 0) {
+      return setFieldErrors({ time: 'เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่มต้น' })
+    }
 
     // Payroll lockout check
     const { data: locked } = await supabase
@@ -93,7 +102,7 @@ export default function OTRequestPage() {
       .lte('start_date', form.request_date)
       .gte('end_date', form.request_date)
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (locked) {
       return setError(`รอบ "${locked.period_name}" ปิดแล้ว ไม่สามารถยื่น OT ย้อนหลังได้`)
@@ -103,25 +112,38 @@ export default function OTRequestPage() {
     setError('')
 
     const multiplier = getMultiplier()
-    const { error: err } = await supabase.from('ot_requests').insert({
-      employee_id: session.user.employeeId,
-      request_date: form.request_date,
-      ot_start: form.ot_start,
-      ot_end: form.ot_end,
-      ot_hours: otHours,
-      day_type: form.day_type,
-      multiplier,
-      ot_hours_multiplied: Math.round(otHours * multiplier * 2) / 2,
-      work_description: form.work_description,
-      reason: form.reason || null,
-      status: 'pending',
-      current_approval_level: 1,
-    })
+    const { data: inserted, error: err } = await supabase
+      .from('ot_requests')
+      .insert({
+        employee_id: session.user.employeeId,
+        request_date: form.request_date,
+        ot_start: form.ot_start,
+        ot_end: form.ot_end,
+        ot_hours: otHours,
+        day_type: form.day_type,
+        multiplier,
+        ot_hours_multiplied: Math.round(otHours * multiplier * 2) / 2,
+        work_description: form.work_description,
+        reason: form.reason || null,
+        status: 'pending',
+        current_approval_level: 1,
+      })
+      .select('id')
+      .single()
 
     if (err) {
       setError('เกิดข้อผิดพลาด กรุณาลองใหม่')
       setSubmitting(false)
       return
+    }
+
+    // แจ้งเตือน LINE ไปยังผู้อนุมัติ
+    if (inserted?.id) {
+      fetch('/api/notify/new-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'ot', requestId: inserted.id }),
+      }).catch(() => {})
     }
 
     router.push('/requests')
@@ -132,10 +154,7 @@ export default function OTRequestPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-400">←</button>
-        <h1 className="font-semibold text-gray-800">ขอทำ OT</h1>
-      </div>
+      <PageHeader title="ขอทำ OT" />
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
@@ -203,11 +222,12 @@ export default function OTRequestPage() {
             <input
               type="time"
               value={form.ot_end}
-              onChange={e => setForm({ ...form, ot_end: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800"
+              onChange={e => { setForm({ ...form, ot_end: e.target.value }); setFieldErrors(fe => ({ ...fe, time: undefined })) }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-gray-800"
             />
           </div>
         </div>
+        <FieldError message={fieldErrors.time} />
 
         {/* สรุป OT */}
         {otHours > 0 && (
@@ -235,11 +255,12 @@ export default function OTRequestPage() {
           <label className="block text-sm font-medium text-gray-700 mb-1">งานที่ทำ *</label>
           <textarea
             value={form.work_description}
-            onChange={e => setForm({ ...form, work_description: e.target.value })}
+            onChange={e => { setForm({ ...form, work_description: e.target.value }); setFieldErrors(fe => ({ ...fe, desc: undefined })) }}
             rows={3}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800 resize-none"
+            className={`w-full border rounded-lg px-3 py-2.5 text-gray-800 resize-none ${fieldErrors.desc ? 'border-red-400' : 'border-gray-300'}`}
             placeholder="อธิบายงานที่ทำในช่วง OT..."
           />
+          <FieldError message={fieldErrors.desc} />
         </div>
 
         {/* เหตุผล */}
@@ -260,13 +281,9 @@ export default function OTRequestPage() {
           </div>
         )}
 
-        <button
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="w-full bg-orange-500 text-white rounded-xl py-3 font-medium disabled:opacity-50"
-        >
+        <Button variant="primary" fullWidth onClick={handleSubmit} disabled={submitting} className="py-3">
           {submitting ? 'กำลังส่ง...' : 'ส่งคำขอ OT'}
-        </button>
+        </Button>
       </div>
     </div>
   )

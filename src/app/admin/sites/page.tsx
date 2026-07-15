@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -22,9 +23,11 @@ interface Project {
 }
 
 export default function SiteManagePage() {
+  const { data: session, status } = useSession()
   const router = useRouter()
   const [sites, setSites] = useState<SiteLocation[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingSite, setEditingSite] = useState<SiteLocation | null>(null)
   const [getting, setGetting] = useState(false)
@@ -36,27 +39,38 @@ export default function SiteManagePage() {
     radius_meters: '200',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
 
+  // guard: เฉพาะ admin เท่านั้น
   useEffect(() => {
+    if (status === 'loading') return
+    if (!session?.user?.isAdmin) {
+      router.replace('/dashboard')
+      return
+    }
     fetchData()
-  }, [])
+  }, [session, status, router])
 
   async function fetchData() {
-    const { data: sitesData } = await supabase
-      .from('site_locations')
-      .select('*, project:projects(project_code, project_name)')
-      .order('name')
-    setSites(sitesData || [])
-
-    const { data: projectsData } = await supabase
-      .from('projects')
-      .select('id, project_code, project_name')
-      .eq('is_active', true)
-      .order('project_code')
-    setProjects(projectsData || [])
+    setLoading(true)
+    const [sitesRes, projectsRes] = await Promise.all([
+      supabase
+        .from('site_locations')
+        .select('*, project:projects(project_code, project_name)')
+        .order('name'),
+      supabase
+        .from('projects')
+        .select('id, project_code, project_name')
+        .eq('is_active', true)
+        .order('project_code'),
+    ])
+    setSites(sitesRes.data || [])
+    setProjects(projectsRes.data || [])
+    setLoading(false)
   }
 
   function handleEdit(site: SiteLocation) {
+    setFormError('')
     setEditingSite(site)
     setForm({
       name: site.name,
@@ -69,6 +83,7 @@ export default function SiteManagePage() {
   }
 
   function handleNew() {
+    setFormError('')
     setEditingSite(null)
     setForm({ name: '', project_id: '', latitude: '', longitude: '', radius_meters: '200' })
     setShowForm(true)
@@ -94,8 +109,14 @@ export default function SiteManagePage() {
   }
 
   async function handleSubmit() {
-    if (!form.name || !form.latitude || !form.longitude) return
+    if (!form.name || !form.latitude || !form.longitude) {
+      return setFormError('กรุณากรอกชื่อไซต์และพิกัด GPS ให้ครบ')
+    }
+    if (isNaN(parseFloat(form.latitude)) || isNaN(parseFloat(form.longitude))) {
+      return setFormError('พิกัด GPS ไม่ถูกต้อง')
+    }
     setSubmitting(true)
+    setFormError('')
 
     const payload = {
       name: form.name,
@@ -105,20 +126,38 @@ export default function SiteManagePage() {
       radius_meters: parseInt(form.radius_meters) || 200,
     }
 
-    if (editingSite) {
-      await supabase.from('site_locations').update(payload).eq('id', editingSite.id)
-    } else {
-      await supabase.from('site_locations').insert(payload)
+    try {
+      const { error } = editingSite
+        ? await supabase.from('site_locations').update(payload).eq('id', editingSite.id)
+        : await supabase.from('site_locations').insert(payload)
+      if (error) throw error
+      await fetchData()
+      setShowForm(false)
+    } catch (e) {
+      console.error('save site error:', e)
+      setFormError('บันทึกไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setSubmitting(false)
     }
-
-    await fetchData()
-    setShowForm(false)
-    setSubmitting(false)
   }
 
   async function toggleActive(site: SiteLocation) {
-    await supabase.from('site_locations').update({ is_active: !site.is_active }).eq('id', site.id)
-    await fetchData()
+    try {
+      const { error } = await supabase.from('site_locations').update({ is_active: !site.is_active }).eq('id', site.id)
+      if (error) throw error
+      await fetchData()
+    } catch (e) {
+      console.error('toggle site error:', e)
+      alert('เปลี่ยนสถานะไซต์ไม่สำเร็จ กรุณาลองใหม่')
+    }
+  }
+
+  if (status === 'loading' || !session?.user?.isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-400">กำลังตรวจสอบสิทธิ์...</p>
+      </div>
+    )
   }
 
   if (showForm) {
@@ -198,6 +237,12 @@ export default function SiteManagePage() {
             <p className="text-xs text-gray-400 mt-1">แนะนำ 100-300 เมตร สำหรับไซต์ก่อสร้าง</p>
           </div>
 
+          {formError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+              <p className="text-red-600 text-sm">{formError}</p>
+            </div>
+          )}
+
           <button
             onClick={handleSubmit}
             disabled={submitting}
@@ -226,7 +271,9 @@ export default function SiteManagePage() {
       </div>
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-3">
-        {sites.length === 0 ? (
+        {loading ? (
+          <p className="text-center text-gray-400 text-sm py-8">กำลังโหลด...</p>
+        ) : sites.length === 0 ? (
           <div className="bg-white rounded-xl p-6 text-center text-gray-400">
             ยังไม่มีไซต์งาน
           </div>
