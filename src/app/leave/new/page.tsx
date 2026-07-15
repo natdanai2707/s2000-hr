@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { LeaveType } from '@/lib/types'
 import { todayISO, daysBetweenInclusive, eachDateInclusive } from '@/lib/date'
+import { Button, FieldError, PageHeader } from '@/components/ui'
 
 interface LeaveQuota {
   sick_leave_quota: number
@@ -35,6 +36,7 @@ export default function NewLeavePage() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<{ type?: string; date?: string }>({})
 
   useEffect(() => {
     fetchLeaveTypes()
@@ -138,8 +140,11 @@ export default function NewLeavePage() {
   const isLate = selectedType?.code === 'LATE'
 
   async function handleSubmit() {
-    if (!form.leave_type_id) return setError('กรุณาเลือกประเภทการลา')
-    if (!isLate && !form.start_date) return setError('กรุณาเลือกวันที่')
+    const fe: { type?: string; date?: string } = {}
+    if (!form.leave_type_id) fe.type = 'กรุณาเลือกประเภทการลา'
+    if (!isLate && !form.start_date) fe.date = 'กรุณาเลือกวันที่'
+    setFieldErrors(fe)
+    if (fe.type || fe.date) return
     if (!session?.user?.employeeId) return
 
     setError('')
@@ -196,10 +201,7 @@ export default function NewLeavePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-400">←</button>
-        <h1 className="font-semibold text-gray-800">ยื่นคำขอลา</h1>
-      </div>
+      <PageHeader title="ยื่นคำขอลา" />
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
@@ -235,14 +237,15 @@ export default function NewLeavePage() {
           <label className="block text-sm font-medium text-gray-700 mb-1">ประเภทการลา</label>
           <select
             value={form.leave_type_id}
-            onChange={e => setForm({ ...form, leave_type_id: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800 bg-white"
+            onChange={e => { setForm({ ...form, leave_type_id: e.target.value }); setFieldErrors(fe => ({ ...fe, type: undefined })) }}
+            className={`w-full border rounded-lg px-3 py-2.5 min-h-11 text-gray-800 bg-white ${fieldErrors.type ? 'border-red-400' : 'border-gray-300'}`}
           >
             <option value="">เลือกประเภท</option>
             {leaveTypes.map(t => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
+          <FieldError message={fieldErrors.type} />
         </div>
 
         {/* มาสาย */}
@@ -268,9 +271,10 @@ export default function NewLeavePage() {
               <input
                 type="date"
                 value={form.start_date}
-                onChange={e => setForm({ ...form, start_date: e.target.value, end_date: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800"
+                onChange={e => { setForm({ ...form, start_date: e.target.value, end_date: e.target.value }); setFieldErrors(fe => ({ ...fe, date: undefined })) }}
+                className={`w-full border rounded-lg px-3 py-2.5 min-h-11 text-gray-800 ${fieldErrors.date ? 'border-red-400' : 'border-gray-300'}`}
               />
+              <FieldError message={fieldErrors.date} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">วันที่สิ้นสุด</label>
@@ -306,13 +310,9 @@ export default function NewLeavePage() {
           </div>
         )}
 
-        <button
-          onClick={handleSubmit}
-          disabled={submitting}
-          className="w-full bg-[#06C755] text-white rounded-xl py-3 font-medium disabled:opacity-50"
-        >
+        <Button variant="primary" fullWidth onClick={handleSubmit} disabled={submitting} className="py-3">
           {submitting ? 'กำลังส่ง...' : 'ส่งคำขอลา'}
-        </button>
+        </Button>
       </div>
     </div>
   )

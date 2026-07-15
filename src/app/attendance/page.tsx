@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { todayISO, formatThaiTime } from '@/lib/date'
+import { BottomNav } from '@/components/ui'
 
 interface SiteLocation {
   id: string
@@ -216,7 +217,7 @@ export default function AttendancePage() {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
+      <div className="max-w-lg mx-auto px-4 py-6 pb-24 space-y-4">
 
         {/* GPS Status */}
         <div className={`rounded-xl p-3 flex items-center gap-2 text-sm ${myPosition ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
@@ -354,6 +355,8 @@ export default function AttendancePage() {
           </div>
         )}
       </div>
+
+      <BottomNav />
     </div>
   )
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { StatusChip, Button, PageHeader } from '@/components/ui'
 
 export default function OTApprovePage() {
   const { data: session } = useSession()
@@ -92,10 +93,7 @@ export default function OTApprovePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-400">←</button>
-        <h1 className="font-semibold text-gray-800">อนุมัติคำขอ OT</h1>
-      </div>
+      <PageHeader title="อนุมัติคำขอ OT" />
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
@@ -105,9 +103,7 @@ export default function OTApprovePage() {
               <p className="font-semibold text-gray-800">{emp?.name}</p>
               <p className="text-xs text-gray-400">{emp?.position}</p>
             </div>
-            <span className={`text-xs px-2 py-1 rounded-full ${request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : request.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-              {request.status === 'pending' ? 'รออนุมัติ' : request.status === 'approved' ? 'อนุมัติแล้ว' : 'ไม่อนุมัติ'}
-            </span>
+            <StatusChip status={request.status} />
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-sm">
@@ -144,8 +140,8 @@ export default function OTApprovePage() {
             )}
             <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" placeholder="หมายเหตุ (ถ้ามี)" />
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => handleAction('rejected')} disabled={submitting} className="bg-red-50 text-red-600 border border-red-200 rounded-xl py-3 font-medium disabled:opacity-50">ไม่อนุมัติ</button>
-              <button onClick={() => handleAction('approved')} disabled={submitting} className="bg-orange-500 text-white rounded-xl py-3 font-medium disabled:opacity-50">อนุมัติ</button>
+              <Button variant="danger" onClick={() => handleAction('rejected')} disabled={submitting}>ไม่อนุมัติ</Button>
+              <Button variant="primary" onClick={() => handleAction('approved')} disabled={submitting}>{submitting ? 'กำลังบันทึก...' : 'อนุมัติ'}</Button>
             </div>
           </div>
         ) : (

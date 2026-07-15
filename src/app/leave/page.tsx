@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { currentMonthISO, monthRange } from '@/lib/date'
+import { StatusChip, EmptyState, PageHeader } from '@/components/ui'
 
 export default function LeaveListPage() {
   const { data: session } = useSession()
@@ -53,10 +54,7 @@ export default function LeaveListPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-400">←</button>
-        <h1 className="font-semibold text-gray-800">คำขอลาทั้งหมด</h1>
-      </div>
+      <PageHeader title="คำขอลาทั้งหมด" />
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
 
@@ -94,7 +92,7 @@ export default function LeaveListPage() {
         {loading ? (
           <p className="text-center text-gray-400 py-8">กำลังโหลด...</p>
         ) : requests.length === 0 ? (
-          <p className="text-center text-gray-400 py-8">ไม่มีคำขอในช่วงนี้</p>
+          <EmptyState icon="🗂️" title="ไม่มีคำขอลาในช่วงนี้" hint="ลองเปลี่ยนเดือนหรือสถานะด้านบน" />
         ) : (
           <div className="space-y-2">
             {requests.map(req => (
@@ -118,9 +116,7 @@ export default function LeaveListPage() {
                     </p>
                     {req.reason && <p className="text-xs text-gray-400 mt-0.5">{req.reason}</p>}
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${statusColor[req.status]}`}>
-                    {statusLabel[req.status]}
-                  </span>
+                  <StatusChip status={req.status} />
                 </div>
               </div>
             ))}

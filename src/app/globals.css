@@ -1,26 +1,68 @@
 @import "tailwindcss";
 
+/* ============================================================
+   S-2000 HR — Design Tokens
+   อ้างอิง design language ของแอป HR ชั้นนำ (BambooHR / Rippling)
+   สีหลักเดียว + semantic colors สำหรับสถานะ
+   ============================================================ */
+
+@theme {
+  /* ฟอนต์หลัก (Noto Sans Thai จาก next/font) */
+  --font-sans: var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+
+  /* สีแบรนด์หลัก (เขียว) — ใช้กับปุ่ม primary และองค์ประกอบหลัก */
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+
+  /* Semantic — สถานะคำขอ */
+  --color-pending-bg: #fef3c7;
+  --color-pending-fg: #92400e;
+  --color-approved-bg: #d1fae5;
+  --color-approved-fg: #065f46;
+  --color-rejected-bg: #fee2e2;
+  --color-rejected-fg: #991b1b;
+  --color-neutral-bg: #f3f4f6;
+  --color-neutral-fg: #4b5563;
+
+  /* พื้นหลังแอป */
+  --color-surface: #ffffff;
+  --color-app-bg: #f8fafc;
+}
+
 :root {
-  --background: #ffffff;
+  --background: #f8fafc;
   --foreground: #171717;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--background);
+  background: var(--color-app-bg);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  /* กันการ zoom เด้งบน iOS เวลากดช่อง input */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* touch target ขั้นต่ำ 44px — ผู้ใช้เป็นช่างใส่ถุงมือ/มือเปื้อน
+   ใช้กับปุ่มไอคอน/ลิงก์เล็กที่ต้องกดง่าย */
+.tap-target {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* input/select/textarea ทั้งแอป ขนาด font 16px กัน iOS zoom, สูงพอแตะ */
+input,
+select,
+textarea {
+  font-size: 16px;
 }

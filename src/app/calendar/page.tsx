@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { todayISO, monthRange, eachDateInclusive, formatThaiDate } from '@/lib/date'
+import { BottomNav } from '@/components/ui'
 
 interface DayData {
   hasWorkLog: boolean
@@ -272,7 +273,7 @@ export default function CalendarPage() {
         <h1 className="font-semibold text-gray-800">ปฏิทิน</h1>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-4">
+      <div className="max-w-lg mx-auto px-4 py-4 pb-24">
 
         {/* Month Navigation */}
         <div className="flex items-center justify-between mb-4">
@@ -350,6 +351,8 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+
+      <BottomNav />
     </div>
   )
 }

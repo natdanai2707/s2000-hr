@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { LeaveRequest } from '@/lib/types'
 import { monthRange, eachDateInclusive } from '@/lib/date'
+import { StatusChip, BottomNav, EmptyState } from '@/components/ui'
 
 interface DayData {
   hasWorkLog: boolean
@@ -181,9 +182,6 @@ export default function DashboardPage() {
   const cells: (number | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
   while (cells.length % 7 !== 0) cells.push(null)
 
-  const statusLabel: Record<string, string> = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิก' }
-  const statusColor: Record<string, string> = { pending: 'bg-yellow-100 text-yellow-800', approved: 'bg-green-100 text-green-800', rejected: 'bg-red-100 text-red-800', cancelled: 'bg-gray-100 text-gray-600' }
-
   if (status === 'loading' || loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
@@ -233,7 +231,7 @@ export default function DashboardPage() {
         <button onClick={() => signOut({ callbackUrl: '/login' })} className="text-xs text-gray-400">ออกจากระบบ</button>
       </div>
 
-      <div className="max-w-lg mx-auto px-3 py-3 space-y-4">
+      <div className="max-w-lg mx-auto px-3 py-3 pb-24 space-y-4">
 
         {loadError && (
           <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between">
@@ -364,7 +362,7 @@ export default function DashboardPage() {
             <button onClick={() => router.push('/leave')} className="text-xs text-blue-500">ดูทั้งหมด</button>
           </div>
           {myRequests.length === 0 ? (
-            <div className="bg-white rounded-xl p-4 text-center text-gray-400 text-sm">ยังไม่มีคำขอลา</div>
+            <EmptyState icon="📋" title="ยังไม่มีคำขอลา" hint="กดปุ่ม “ยื่นคำขอลา” ด้านบนเพื่อเริ่มยื่นลา มาสาย หรือขาดงาน" />
           ) : (
             <div className="space-y-2">
               {myRequests.map((req) => (
@@ -374,7 +372,7 @@ export default function DashboardPage() {
                       <p className="font-medium text-gray-800 text-sm">{(req as any).leave_type?.name}</p>
                       <p className="text-xs text-gray-500">{req.start_date}{req.end_date !== req.start_date ? ` ถึง ${req.end_date}` : ''} · {req.total_days} วัน</p>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded-full ${statusColor[req.status]}`}>{statusLabel[req.status]}</span>
+                    <StatusChip status={req.status} />
                   </div>
                 </div>
               ))}
@@ -384,11 +382,13 @@ export default function DashboardPage() {
 
         {/* Admin */}
         {session.user.isAdmin && (
-          <button onClick={() => router.push('/admin')} className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2">
+          <button onClick={() => router.push('/admin')} className="w-full text-center text-xs text-gray-400 hover:text-gray-600 py-2 min-h-11">
             ⚙️ จัดการระบบ (Admin)
           </button>
         )}
       </div>
+
+      <BottomNav />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { currentMonthISO, monthRange } from '@/lib/date'
+import { StatusChip, BottomNav, EmptyState } from '@/components/ui'
 
 type TabType = 'all' | 'leave' | 'ot' | 'worklog'
 
@@ -56,19 +57,6 @@ export default function RequestsPage() {
     setLoading(false)
   }
 
-  const statusColor: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    approved: 'bg-green-100 text-green-800',
-    rejected: 'bg-red-100 text-red-800',
-    cancelled: 'bg-gray-100 text-gray-600',
-  }
-  const statusLabel: Record<string, string> = {
-    pending: 'รออนุมัติ',
-    approved: 'อนุมัติแล้ว',
-    rejected: 'ไม่อนุมัติ',
-    cancelled: 'ยกเลิก',
-  }
-
   const tabs = [
     { key: 'all', label: 'ทั้งหมด', count: leaves.length + otRequests.length + workLogs.length },
     { key: 'leave', label: 'การลา', count: leaves.length },
@@ -83,7 +71,7 @@ export default function RequestsPage() {
         <h1 className="font-semibold text-gray-800">ประวัติคำขอและบันทึก</h1>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-4 space-y-4">
+      <div className="max-w-lg mx-auto px-4 py-4 pb-24 space-y-4">
 
         {/* Filter เดือน */}
         <input
@@ -134,9 +122,7 @@ export default function RequestsPage() {
                       )}
                     </div>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${statusColor[req.status]}`}>
-                    {statusLabel[req.status]}
-                  </span>
+                  <StatusChip status={req.status} />
                 </div>
               </div>
             ))}
@@ -159,9 +145,7 @@ export default function RequestsPage() {
                       <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{req.work_description}</p>
                     </div>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full shrink-0 ${statusColor[req.status]}`}>
-                    {statusLabel[req.status]}
-                  </span>
+                  <StatusChip status={req.status} />
                 </div>
               </div>
             ))}
@@ -193,13 +177,13 @@ export default function RequestsPage() {
 
             {/* Empty state */}
             {!loading && leaves.length === 0 && otRequests.length === 0 && workLogs.length === 0 && (
-              <div className="bg-white rounded-xl p-8 text-center text-gray-400">
-                <p className="text-sm">ไม่มีข้อมูลในเดือนนี้</p>
-              </div>
+              <EmptyState icon="🗂️" title="ไม่มีข้อมูลในเดือนนี้" hint="ลองเปลี่ยนเดือนด้านบน หรือเริ่มยื่นคำขอ/บันทึกงานจากหน้าหลัก" />
             )}
           </div>
         )}
       </div>
+
+      <BottomNav />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { LeaveRequest } from '@/lib/types'
+import { Button, PageHeader } from '@/components/ui'
 
 export default function ApprovePage() {
   const { data: session } = useSession()
@@ -129,10 +130,7 @@ export default function ApprovePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-400">←</button>
-        <h1 className="font-semibold text-gray-800">อนุมัติคำขอลา</h1>
-      </div>
+      <PageHeader title="อนุมัติคำขอลา" />
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
@@ -213,20 +211,12 @@ export default function ApprovePage() {
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => handleAction('rejected')}
-                disabled={submitting}
-                className="bg-red-50 text-red-600 border border-red-200 rounded-xl py-3 font-medium disabled:opacity-50"
-              >
+              <Button variant="danger" onClick={() => handleAction('rejected')} disabled={submitting}>
                 ไม่อนุมัติ
-              </button>
-              <button
-                onClick={() => handleAction('approved')}
-                disabled={submitting}
-                className="bg-[#06C755] text-white rounded-xl py-3 font-medium disabled:opacity-50"
-              >
-                อนุมัติ
-              </button>
+              </Button>
+              <Button variant="primary" onClick={() => handleAction('approved')} disabled={submitting}>
+                {submitting ? 'กำลังบันทึก...' : 'อนุมัติ'}
+              </Button>
             </div>
           </div>
         ) : (

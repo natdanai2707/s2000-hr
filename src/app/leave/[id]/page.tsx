@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { StatusChip, Button, PageHeader } from '@/components/ui'
 
 export default function LeaveDetailPage() {
   const { data: session } = useSession()
@@ -78,30 +79,13 @@ export default function LeaveDetailPage() {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50"><p className="text-gray-400">ไม่พบข้อมูล</p></div>
   }
 
-  const statusLabel: Record<string, string> = {
-    pending: 'รออนุมัติ',
-    approved: 'อนุมัติแล้ว',
-    rejected: 'ไม่อนุมัติ',
-    cancelled: 'ยกเลิกแล้ว',
-  }
-
-  const statusColor: Record<string, string> = {
-    pending: 'bg-yellow-100 text-yellow-800',
-    approved: 'bg-green-100 text-green-800',
-    rejected: 'bg-red-100 text-red-800',
-    cancelled: 'bg-gray-100 text-gray-600',
-  }
-
   const isOwner = session?.user?.employeeId === request.employee_id
   const canCancelPending = isOwner && request.status === 'pending'
   const canCancelApproved = isOwner && request.status === 'approved' && !request.cancel_status
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-400">←</button>
-        <h1 className="font-semibold text-gray-800">รายละเอียดคำขอลา</h1>
-      </div>
+      <PageHeader title="รายละเอียดคำขอลา" />
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
 
@@ -109,9 +93,7 @@ export default function LeaveDetailPage() {
         <div className="bg-white rounded-xl p-4 border border-gray-100 space-y-2.5">
           <div className="flex items-center justify-between">
             <p className="font-semibold text-gray-800">{request.leave_type?.name}</p>
-            <span className={`text-xs px-2 py-1 rounded-full ${statusColor[request.status]}`}>
-              {statusLabel[request.status]}
-            </span>
+            <StatusChip status={request.status} />
           </div>
 
           {request.cancel_status === 'pending' && (
@@ -186,23 +168,16 @@ export default function LeaveDetailPage() {
 
         {/* ยกเลิกคำขอ pending */}
         {canCancelPending && (
-          <button
-            onClick={handleCancelPending}
-            disabled={submitting}
-            className="w-full border border-red-300 text-red-500 rounded-xl py-3 text-sm font-medium hover:bg-red-50 transition disabled:opacity-50"
-          >
-            ยกเลิกคำขอลา
-          </button>
+          <Button variant="danger" fullWidth onClick={handleCancelPending} disabled={submitting}>
+            {submitting ? 'กำลังยกเลิก...' : 'ยกเลิกคำขอลา'}
+          </Button>
         )}
 
         {/* ยกเลิกคำขอที่ approved แล้ว */}
         {canCancelApproved && !showCancelForm && (
-          <button
-            onClick={() => setShowCancelForm(true)}
-            className="w-full border border-orange-300 text-orange-500 rounded-xl py-3 text-sm font-medium hover:bg-orange-50 transition"
-          >
+          <Button variant="secondary" fullWidth onClick={() => setShowCancelForm(true)}>
             ขอยกเลิกการลา (ต้องรอ HR อนุมัติ)
-          </button>
+          </Button>
         )}
 
         {showCancelForm && (
@@ -216,19 +191,12 @@ export default function LeaveDetailPage() {
               placeholder="ระบุเหตุผล..."
             />
             <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setShowCancelForm(false)}
-                className="border border-gray-300 text-gray-600 rounded-lg py-2 text-sm"
-              >
-                ยกเลิก
-              </button>
-              <button
-                onClick={handleCancelApproved}
-                disabled={!cancelReason || submitting}
-                className="bg-orange-500 text-white rounded-lg py-2 text-sm disabled:opacity-50"
-              >
-                ส่งคำขอยกเลิก
-              </button>
+              <Button variant="secondary" onClick={() => setShowCancelForm(false)}>
+                ปิด
+              </Button>
+              <Button variant="primary" onClick={handleCancelApproved} disabled={!cancelReason || submitting}>
+                {submitting ? 'กำลังส่ง...' : 'ส่งคำขอยกเลิก'}
+              </Button>
             </div>
           </div>
         )}
