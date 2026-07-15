@@ -14,6 +14,7 @@ export default function LeaveDetailPage() {
   const [cancelReason, setCancelReason] = useState('')
   const [showCancelForm, setShowCancelForm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     if (params.id) fetchRequest()
@@ -31,26 +32,42 @@ export default function LeaveDetailPage() {
 
   async function handleCancelPending() {
     setSubmitting(true)
-    await supabase
-      .from('leave_requests')
-      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-      .eq('id', params.id)
-    router.push('/dashboard')
+    setActionError('')
+    try {
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+        .eq('id', params.id)
+      if (error) throw error
+      router.push('/dashboard')
+    } catch (e) {
+      console.error('cancel pending error:', e)
+      setActionError('ยกเลิกคำขอไม่สำเร็จ กรุณาลองใหม่')
+      setSubmitting(false)
+    }
   }
 
   async function handleCancelApproved() {
     if (!cancelReason) return
     setSubmitting(true)
-    await supabase
-      .from('leave_requests')
-      .update({
-        cancel_reason: cancelReason,
-        cancel_requested_at: new Date().toISOString(),
-        cancel_status: 'pending',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', params.id)
-    router.push('/dashboard')
+    setActionError('')
+    try {
+      const { error } = await supabase
+        .from('leave_requests')
+        .update({
+          cancel_reason: cancelReason,
+          cancel_requested_at: new Date().toISOString(),
+          cancel_status: 'pending',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', params.id)
+      if (error) throw error
+      router.push('/dashboard')
+    } catch (e) {
+      console.error('cancel approved error:', e)
+      setActionError('ส่งคำขอยกเลิกไม่สำเร็จ กรุณาลองใหม่')
+      setSubmitting(false)
+    }
   }
 
   if (loading) {
@@ -158,6 +175,12 @@ export default function LeaveDetailPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {actionError && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+            <p className="text-red-600 text-sm">{actionError}</p>
           </div>
         )}
 

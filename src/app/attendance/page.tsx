@@ -62,6 +62,7 @@ export default function AttendancePage() {
   const [processing, setProcessing] = useState(false)
   const [selectedSite, setSelectedSite] = useState<string>('')
   const [note, setNote] = useState('')
+  const [actionError, setActionError] = useState('')
 
   const today = todayISO()
 
@@ -74,34 +75,43 @@ export default function AttendancePage() {
 
   async function fetchData() {
     setLoading(true)
+    setActionError('')
     const startOfDay = `${today}T00:00:00+07:00`
     const endOfDay = `${today}T23:59:59+07:00`
 
-    const [sitesRes, logsRes] = await Promise.all([
-      supabase
-        .from('site_locations')
-        .select('*, project:projects(project_code, project_name)')
-        .eq('is_active', true)
-        .order('name'),
-      supabase
-        .from('attendance_logs')
-        .select('*, site_location:site_locations(*, project:projects(project_code, project_name))')
-        .eq('employee_id', session!.user.employeeId!)
-        .gte('check_in', startOfDay)
-        .lte('check_in', endOfDay)
-        .order('check_in', { ascending: false }),
-    ])
+    try {
+      const [sitesRes, logsRes] = await Promise.all([
+        supabase
+          .from('site_locations')
+          .select('*, project:projects(project_code, project_name)')
+          .eq('is_active', true)
+          .order('name'),
+        supabase
+          .from('attendance_logs')
+          .select('*, site_location:site_locations(*, project:projects(project_code, project_name))')
+          .eq('employee_id', session!.user.employeeId!)
+          .gte('check_in', startOfDay)
+          .lte('check_in', endOfDay)
+          .order('check_in', { ascending: false }),
+      ])
 
-    setSites(sitesRes.data || [])
+      if (sitesRes.error) throw sitesRes.error
+      if (logsRes.error) throw logsRes.error
 
-    const logs = (logsRes.data || []) as AttendanceLog[]
-    setTodayLogs(logs)
+      setSites(sitesRes.data || [])
 
-    // หา log ที่ยังไม่ได้เช็คเอาท์
-    const active = logs.find(l => !l.check_out) || null
-    setActiveLog(active)
+      const logs = (logsRes.data || []) as AttendanceLog[]
+      setTodayLogs(logs)
 
-    setLoading(false)
+      // หา log ที่ยังไม่ได้เช็คเอาท์
+      const active = logs.find(l => !l.check_out) || null
+      setActiveLog(active)
+    } catch (e) {
+      console.error('attendance fetchData error:', e)
+      setActionError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
+    }
   }
 
   function getLocation() {
@@ -142,32 +152,48 @@ export default function AttendancePage() {
   async function handleCheckIn() {
     if (!session?.user?.employeeId || !selectedSite || !myPosition || !isInRange) return
     setProcessing(true)
-    await supabase.from('attendance_logs').insert({
-      employee_id: session.user.employeeId,
-      site_location_id: selectedSite,
-      check_in: new Date().toISOString(),
-      check_in_lat: myPosition.lat,
-      check_in_lng: myPosition.lng,
-      note: note || null,
-    })
-    await fetchData()
-    setNote('')
-    setProcessing(false)
+    setActionError('')
+    try {
+      const { error } = await supabase.from('attendance_logs').insert({
+        employee_id: session.user.employeeId,
+        site_location_id: selectedSite,
+        check_in: new Date().toISOString(),
+        check_in_lat: myPosition.lat,
+        check_in_lng: myPosition.lng,
+        note: note || null,
+      })
+      if (error) throw error
+      setNote('')
+      await fetchData()
+    } catch (e) {
+      console.error('check-in error:', e)
+      setActionError('เช็คอินไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setProcessing(false)
+    }
   }
 
   async function handleCheckOut() {
     if (!activeLog || !myPosition) return
     setProcessing(true)
-    await supabase
-      .from('attendance_logs')
-      .update({
-        check_out: new Date().toISOString(),
-        check_out_lat: myPosition.lat,
-        check_out_lng: myPosition.lng,
-      })
-      .eq('id', activeLog.id)
-    await fetchData()
-    setProcessing(false)
+    setActionError('')
+    try {
+      const { error } = await supabase
+        .from('attendance_logs')
+        .update({
+          check_out: new Date().toISOString(),
+          check_out_lat: myPosition.lat,
+          check_out_lng: myPosition.lng,
+        })
+        .eq('id', activeLog.id)
+      if (error) throw error
+      await fetchData()
+    } catch (e) {
+      console.error('check-out error:', e)
+      setActionError('เช็คเอาท์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setProcessing(false)
+    }
   }
 
   if (loading) {
@@ -204,6 +230,12 @@ export default function AttendancePage() {
             <button onClick={getLocation} className="underline text-xs shrink-0">ลองใหม่</button>
           )}
         </div>
+
+        {actionError && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+            <p className="text-red-600 text-sm">{actionError}</p>
+          </div>
+        )}
 
         {/* Active log - รออยู่ระหว่างเช็คอิน */}
         {activeLog && (

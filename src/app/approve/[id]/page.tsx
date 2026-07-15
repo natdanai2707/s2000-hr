@@ -15,6 +15,7 @@ export default function ApprovePage() {
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [myLevel, setMyLevel] = useState<number | null>(null)
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     if (params.id) fetchRequest()
@@ -51,50 +52,54 @@ export default function ApprovePage() {
   async function handleAction(action: 'approved' | 'rejected') {
     if (!request || !session?.user?.approverId || myLevel === null) return
     setSubmitting(true)
+    setActionError('')
 
-    // บันทึก action
-    await supabase.from('approval_actions').insert({
-      leave_request_id: request.id,
-      approver_id: session.user.approverId,
-      level: myLevel,
-      action,
-      comment: comment || null,
-    })
+    try {
+      // บันทึก action
+      const { error: actErr } = await supabase.from('approval_actions').insert({
+        leave_request_id: request.id,
+        approver_id: session.user.approverId,
+        level: myLevel,
+        action,
+        comment: comment || null,
+      })
+      if (actErr) throw actErr
 
-    if (action === 'rejected') {
-      // rejected ทันที
-      await supabase
-        .from('leave_requests')
-        .update({ status: 'rejected', updated_at: new Date().toISOString() })
-        .eq('id', request.id)
-    } else {
-      // ตรวจสอบว่ามี level ถัดไปไหม
-      const { data: nextChain } = await supabase
-        .from('approval_chains')
-        .select('level')
-        .eq('employee_id', request.employee_id)
-        .eq('level', myLevel + 1)
-        .maybeSingle()
-
-      if (nextChain) {
-        // ยังมี level ถัดไป ให้ขยับ level
-        await supabase
+      if (action === 'rejected') {
+        // rejected ทันที
+        const { error } = await supabase
           .from('leave_requests')
-          .update({
-            current_approval_level: myLevel + 1,
-            updated_at: new Date().toISOString(),
-          })
+          .update({ status: 'rejected', updated_at: new Date().toISOString() })
           .eq('id', request.id)
+        if (error) throw error
       } else {
-        // approved ครบทุก level
-        await supabase
-          .from('leave_requests')
-          .update({ status: 'approved', updated_at: new Date().toISOString() })
-          .eq('id', request.id)
-      }
-    }
+        // ตรวจสอบว่ามี level ถัดไปไหม
+        const { data: nextChain, error: chErr } = await supabase
+          .from('approval_chains')
+          .select('level')
+          .eq('employee_id', request.employee_id)
+          .eq('level', myLevel + 1)
+          .maybeSingle()
+        if (chErr) throw chErr
 
-    router.push('/dashboard')
+        const { error } = nextChain
+          ? await supabase
+              .from('leave_requests')
+              .update({ current_approval_level: myLevel + 1, updated_at: new Date().toISOString() })
+              .eq('id', request.id)
+          : await supabase
+              .from('leave_requests')
+              .update({ status: 'approved', updated_at: new Date().toISOString() })
+              .eq('id', request.id)
+        if (error) throw error
+      }
+
+      router.push('/dashboard')
+    } catch (e) {
+      console.error('approve action error:', e)
+      setActionError('บันทึกการอนุมัติไม่สำเร็จ กรุณาลองใหม่')
+      setSubmitting(false)
+    }
   }
 
   if (loading) {
@@ -192,6 +197,11 @@ export default function ApprovePage() {
         {/* ส่วนอนุมัติ */}
         {canApprove ? (
           <div className="space-y-3">
+            {actionError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                <p className="text-red-600 text-sm">{actionError}</p>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ (ถ้ามี)</label>
               <textarea

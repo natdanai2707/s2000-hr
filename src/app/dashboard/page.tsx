@@ -5,6 +5,7 @@ import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { LeaveRequest } from '@/lib/types'
+import { monthRange, eachDateInclusive } from '@/lib/date'
 
 interface DayData {
   hasWorkLog: boolean
@@ -23,6 +24,7 @@ export default function DashboardPage() {
   const [dayData, setDayData] = useState<Record<string, DayData>>({})
   const [calLoading, setCalLoading] = useState(true)
   const [showForceLogout, setShowForceLogout] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -55,75 +57,93 @@ export default function DashboardPage() {
 
   async function fetchData() {
     setLoading(true)
-    const { data: requests } = await supabase
-      .from('leave_requests')
-      .select('*, leave_type:leave_types(*)')
-      .eq('employee_id', session!.user.employeeId!)
-      .order('created_at', { ascending: false })
-      .limit(5)
-    setMyRequests(requests || [])
+    setLoadError('')
+    try {
+      const { data: requests, error: reqErr } = await supabase
+        .from('leave_requests')
+        .select('*, leave_type:leave_types(*)')
+        .eq('employee_id', session!.user.employeeId!)
+        .order('created_at', { ascending: false })
+        .limit(5)
+      if (reqErr) throw reqErr
+      setMyRequests(requests || [])
 
-    if (session?.user?.approverId) {
-      const { data: chains } = await supabase
-        .from('approval_chains')
-        .select('employee_id, level')
-        .eq('approver_id', session.user.approverId)
-      if (chains && chains.length > 0) {
-        const pendingList: LeaveRequest[] = []
-        for (const chain of chains) {
-          const { data } = await supabase
+      if (session?.user?.approverId) {
+        const { data: chains, error: chErr } = await supabase
+          .from('approval_chains')
+          .select('employee_id, level')
+          .eq('approver_id', session.user.approverId)
+        if (chErr) throw chErr
+
+        // map employee_id -> level ที่ผู้อนุมัติคนนี้ต้องอนุมัติ
+        const levelByEmp = new Map<string, number>()
+        for (const c of chains || []) levelByEmp.set(c.employee_id, c.level)
+        const empIds = [...levelByEmp.keys()]
+
+        if (empIds.length > 0) {
+          // batch query เดียวแทน loop ทีละคน (แก้ปัญหา N+1)
+          const { data: pend, error: pErr } = await supabase
             .from('leave_requests')
             .select('*, employee:employees(*), leave_type:leave_types(*)')
-            .eq('employee_id', chain.employee_id)
+            .in('employee_id', empIds)
             .eq('status', 'pending')
-            .eq('current_approval_level', chain.level)
-          if (data) pendingList.push(...data)
+          if (pErr) throw pErr
+          const filtered = (pend || []).filter(
+            r => levelByEmp.get(r.employee_id) === r.current_approval_level
+          )
+          setPendingApprovals(filtered)
+        } else {
+          setPendingApprovals([])
         }
-        setPendingApprovals(pendingList)
       }
+    } catch (e) {
+      console.error('fetchData error:', e)
+      setLoadError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   async function fetchCalendarData() {
     setCalLoading(true)
-    const startDate = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-01`
-    const lastDay = new Date(viewYear, viewMonth + 1, 0).getDate()
-    const endDate = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    const ym = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`
+    const { start: startDate, end: endDate } = monthRange(ym)
 
-    const [logsRes, leavesRes, holidaysRes] = await Promise.all([
-      supabase.from('work_logs').select('log_date').eq('employee_id', session!.user.employeeId!).gte('log_date', startDate).lte('log_date', endDate),
-      supabase.from('leave_requests').select('start_date, end_date, status').eq('employee_id', session!.user.employeeId!).gte('start_date', startDate).lte('end_date', endDate),
-      supabase.from('holidays').select('date, name').gte('date', startDate).lte('date', endDate).eq('is_active', true),
-    ])
+    try {
+      const [logsRes, leavesRes, holidaysRes] = await Promise.all([
+        supabase.from('work_logs').select('log_date').eq('employee_id', session!.user.employeeId!).gte('log_date', startDate).lte('log_date', endDate),
+        supabase.from('leave_requests').select('start_date, end_date, status').eq('employee_id', session!.user.employeeId!).gte('start_date', startDate).lte('end_date', endDate),
+        supabase.from('holidays').select('date, name').gte('date', startDate).lte('date', endDate).eq('is_active', true),
+      ])
 
-    const data: Record<string, DayData> = {}
+      const data: Record<string, DayData> = {}
 
-    for (const log of logsRes.data || []) {
-      const d = log.log_date
-      if (!data[d]) data[d] = emptyDay()
-      data[d].hasWorkLog = true
-    }
-
-    for (const leave of leavesRes.data || []) {
-      const start = new Date(leave.start_date + 'T12:00:00')
-      const end = new Date(leave.end_date + 'T12:00:00')
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-        if (!data[dateStr]) data[dateStr] = emptyDay()
-        data[dateStr].hasLeave = true
-        data[dateStr].leaveStatus = leave.status
+      for (const log of logsRes.data || []) {
+        const d = log.log_date
+        if (!data[d]) data[d] = emptyDay()
+        data[d].hasWorkLog = true
       }
-    }
 
-    for (const h of holidaysRes.data || []) {
-      if (!data[h.date]) data[h.date] = emptyDay()
-      data[h.date].isHoliday = true
-      data[h.date].holidayName = h.name
-    }
+      for (const leave of leavesRes.data || []) {
+        for (const dateStr of eachDateInclusive(leave.start_date, leave.end_date)) {
+          if (!data[dateStr]) data[dateStr] = emptyDay()
+          data[dateStr].hasLeave = true
+          data[dateStr].leaveStatus = leave.status
+        }
+      }
 
-    setDayData(data)
-    setCalLoading(false)
+      for (const h of holidaysRes.data || []) {
+        if (!data[h.date]) data[h.date] = emptyDay()
+        data[h.date].isHoliday = true
+        data[h.date].holidayName = h.name
+      }
+
+      setDayData(data)
+    } catch (e) {
+      console.error('fetchCalendarData error:', e)
+    } finally {
+      setCalLoading(false)
+    }
   }
 
   function emptyDay(): DayData {
@@ -214,6 +234,13 @@ export default function DashboardPage() {
       </div>
 
       <div className="max-w-lg mx-auto px-3 py-3 space-y-4">
+
+        {loadError && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between">
+            <p className="text-red-600 text-sm">{loadError}</p>
+            <button onClick={() => fetchData()} className="text-red-600 text-sm underline shrink-0 ml-2">ลองใหม่</button>
+          </div>
+        )}
 
         {/* ปฏิทิน */}
         <div className="bg-white rounded-2xl p-3 shadow-sm">

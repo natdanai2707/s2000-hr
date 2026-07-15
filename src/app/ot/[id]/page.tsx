@@ -14,6 +14,7 @@ export default function OTApprovePage() {
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [myLevel, setMyLevel] = useState<number | null>(null)
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     if (params.id) fetchRequest()
@@ -42,33 +43,42 @@ export default function OTApprovePage() {
   async function handleAction(action: 'approved' | 'rejected') {
     if (!request || !session?.user?.approverId || myLevel === null) return
     setSubmitting(true)
+    setActionError('')
 
-    await supabase.from('ot_approval_actions').insert({
-      ot_request_id: request.id,
-      approver_id: session.user.approverId,
-      level: myLevel,
-      action,
-      comment: comment || null,
-    })
+    try {
+      const { error: actErr } = await supabase.from('ot_approval_actions').insert({
+        ot_request_id: request.id,
+        approver_id: session.user.approverId,
+        level: myLevel,
+        action,
+        comment: comment || null,
+      })
+      if (actErr) throw actErr
 
-    if (action === 'rejected') {
-      await supabase.from('ot_requests').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', request.id)
-    } else {
-      const { data: nextChain } = await supabase
-        .from('approval_chains')
-        .select('level')
-        .eq('employee_id', request.employee_id)
-        .eq('level', myLevel + 1)
-        .maybeSingle()
-
-      if (nextChain) {
-        await supabase.from('ot_requests').update({ current_approval_level: myLevel + 1, updated_at: new Date().toISOString() }).eq('id', request.id)
+      if (action === 'rejected') {
+        const { error } = await supabase.from('ot_requests').update({ status: 'rejected', updated_at: new Date().toISOString() }).eq('id', request.id)
+        if (error) throw error
       } else {
-        await supabase.from('ot_requests').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', request.id)
-      }
-    }
+        const { data: nextChain, error: chErr } = await supabase
+          .from('approval_chains')
+          .select('level')
+          .eq('employee_id', request.employee_id)
+          .eq('level', myLevel + 1)
+          .maybeSingle()
+        if (chErr) throw chErr
 
-    router.push('/dashboard')
+        const { error } = nextChain
+          ? await supabase.from('ot_requests').update({ current_approval_level: myLevel + 1, updated_at: new Date().toISOString() }).eq('id', request.id)
+          : await supabase.from('ot_requests').update({ status: 'approved', updated_at: new Date().toISOString() }).eq('id', request.id)
+        if (error) throw error
+      }
+
+      router.push('/dashboard')
+    } catch (e) {
+      console.error('ot approve action error:', e)
+      setActionError('บันทึกการอนุมัติไม่สำเร็จ กรุณาลองใหม่')
+      setSubmitting(false)
+    }
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><p className="text-gray-400">กำลังโหลด...</p></div>
@@ -127,6 +137,11 @@ export default function OTApprovePage() {
 
         {canApprove ? (
           <div className="space-y-3">
+            {actionError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                <p className="text-red-600 text-sm">{actionError}</p>
+              </div>
+            )}
             <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none" placeholder="หมายเหตุ (ถ้ามี)" />
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => handleAction('rejected')} disabled={submitting} className="bg-red-50 text-red-600 border border-red-200 rounded-xl py-3 font-medium disabled:opacity-50">ไม่อนุมัติ</button>
