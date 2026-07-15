@@ -22,6 +22,7 @@ interface AttendanceLog {
   check_out: string | null
   site_location: SiteLocation
   note: string | null
+  selfie_url?: string | null
 }
 
 function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -64,6 +65,8 @@ export default function AttendancePage() {
   const [selectedSite, setSelectedSite] = useState<string>('')
   const [note, setNote] = useState('')
   const [actionError, setActionError] = useState('')
+  const [selfie, setSelfie] = useState<File | null>(null)
+  const [selfiePreview, setSelfiePreview] = useState<string>('')
 
   const today = todayISO()
 
@@ -150,11 +153,45 @@ export default function AttendancePage() {
     ? distanceToSelected <= selectedSiteObj.radius_meters
     : false
 
+  function onSelfieChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSelfie(file)
+    if (selfiePreview) URL.revokeObjectURL(selfiePreview)
+    setSelfiePreview(URL.createObjectURL(file))
+  }
+
+  // อัปโหลดรูป selfie ขึ้น Supabase Storage คืน public url (คืน null ถ้าพลาด)
+  async function uploadSelfie(file: File, employeeId: string): Promise<string | null> {
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `${employeeId}/${today}-${Date.now()}.${ext}`
+      const { error } = await supabase.storage
+        .from('attendance-selfies')
+        .upload(path, file, { contentType: file.type, upsert: false })
+      if (error) throw error
+      const { data } = supabase.storage.from('attendance-selfies').getPublicUrl(path)
+      return data.publicUrl
+    } catch (e) {
+      console.error('selfie upload error:', e)
+      return null
+    }
+  }
+
   async function handleCheckIn() {
     if (!session?.user?.employeeId || !selectedSite || !myPosition || !isInRange) return
     setProcessing(true)
     setActionError('')
     try {
+      // อัปโหลด selfie ก่อน (ถ้ามี) — ถ้าพลาดยังเช็คอินต่อได้
+      let selfieUrl: string | null = null
+      if (selfie) {
+        selfieUrl = await uploadSelfie(selfie, session.user.employeeId)
+        if (!selfieUrl) {
+          setActionError('อัปโหลดรูปไม่สำเร็จ แต่ระบบจะบันทึกเช็คอินให้ (รูปไม่ถูกบันทึก)')
+        }
+      }
+
       const { error } = await supabase.from('attendance_logs').insert({
         employee_id: session.user.employeeId,
         site_location_id: selectedSite,
@@ -162,9 +199,13 @@ export default function AttendancePage() {
         check_in_lat: myPosition.lat,
         check_in_lng: myPosition.lng,
         note: note || null,
+        selfie_url: selfieUrl,
       })
       if (error) throw error
       setNote('')
+      setSelfie(null)
+      if (selfiePreview) URL.revokeObjectURL(selfiePreview)
+      setSelfiePreview('')
       await fetchData()
     } catch (e) {
       console.error('check-in error:', e)
@@ -295,11 +336,32 @@ export default function AttendancePage() {
               })}
             </div>
 
+            {/* selfie ตอนเช็คอิน */}
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">รูปเซลฟี่ตอนเช็คอิน (แนะนำ)</p>
+              {selfiePreview ? (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={selfiePreview} alt="selfie" className="w-full h-48 object-cover rounded-xl border border-gray-200" />
+                  <label className="absolute bottom-2 right-2 bg-white/90 text-gray-700 text-xs px-3 py-2 rounded-lg border border-gray-200 cursor-pointer min-h-11 inline-flex items-center">
+                    ถ่ายใหม่
+                    <input type="file" accept="image/*" capture="user" onChange={onSelfieChange} className="hidden" />
+                  </label>
+                </div>
+              ) : (
+                <label className="w-full border-2 border-dashed border-gray-300 rounded-xl py-6 flex flex-col items-center justify-center text-gray-400 cursor-pointer min-h-24">
+                  <span className="text-3xl">📷</span>
+                  <span className="text-sm mt-1">แตะเพื่อถ่ายรูป</span>
+                  <input type="file" accept="image/*" capture="user" onChange={onSelfieChange} className="hidden" />
+                </label>
+              )}
+            </div>
+
             <input
               type="text"
               value={note}
               onChange={e => setNote(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 min-h-11 text-sm text-gray-800"
               placeholder="หมายเหตุ (ถ้ามี)"
             />
 
@@ -342,6 +404,10 @@ export default function AttendancePage() {
                       </div>
                       {log.note && <p className="text-xs text-gray-400 mt-0.5">{log.note}</p>}
                     </div>
+                    {log.selfie_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={log.selfie_url} alt="selfie" className="w-12 h-12 rounded-lg object-cover border border-gray-100 ml-2 shrink-0" />
+                    )}
                   </div>
                 </div>
               ))}

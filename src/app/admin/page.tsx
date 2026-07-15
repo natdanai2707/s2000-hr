@@ -26,6 +26,7 @@ export default function AdminPage() {
 
   const menus = [
     { icon: '📊', label: 'ออก Payroll (Excel)', sub: 'สรุปเงินเดือน/ค่าแรง 4 ชีต', href: '/admin/export' },
+    { icon: '👥', label: 'สรุปทีมวันนี้', sub: 'ใครลา/อยู่ไซต์ไหน', href: '/team' },
     { icon: '📍', label: 'จัดการไซต์งาน', sub: 'พิกัด GPS geofencing', href: '/admin/sites' },
     { icon: '🔒', label: 'รอบ Payroll', sub: 'เปิด/ปิดรอบจ่ายเงิน', href: '/admin/payroll-periods' },
   ]

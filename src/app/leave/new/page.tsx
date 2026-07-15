@@ -182,12 +182,25 @@ export default function NewLeavePage() {
       current_approval_level: 1,
     }
 
-    const { error: err } = await supabase.from('leave_requests').insert(payload)
+    const { data: inserted, error: err } = await supabase
+      .from('leave_requests')
+      .insert(payload)
+      .select('id')
+      .single()
 
     if (err) {
       setError('เกิดข้อผิดพลาด กรุณาลองใหม่')
       setSubmitting(false)
       return
+    }
+
+    // แจ้งเตือน LINE ไปยังผู้อนุมัติ (ไม่บล็อกการนำทางถ้าพลาด)
+    if (inserted?.id) {
+      fetch('/api/notify/new-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'leave', requestId: inserted.id }),
+      }).catch(() => {})
     }
 
     router.push('/dashboard')

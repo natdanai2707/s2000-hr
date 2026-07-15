@@ -418,6 +418,26 @@ export default function DashboardPage() {
           </button>
         </div>
 
+        {/* ทางลัดเพิ่มเติม */}
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => router.push('/payslip')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
+            <span className="text-xl">🧾</span>
+            <div>
+              <p className="font-medium text-xs text-gray-800">สลิปเงินเดือน</p>
+              <p className="text-xs text-gray-400">ดูย้อนหลัง</p>
+            </div>
+          </button>
+          {session.user.approverId && (
+            <button onClick={() => router.push('/team')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
+              <span className="text-xl">👥</span>
+              <div>
+                <p className="font-medium text-xs text-gray-800">สรุปทีมวันนี้</p>
+                <p className="text-xs text-gray-400">ใครลา/อยู่ไซต์</p>
+              </div>
+            </button>
+          )}
+        </div>
+
         {/* My Leave Requests */}
         <div>
           <div className="flex items-center justify-between mb-2">

@@ -112,25 +112,38 @@ export default function OTRequestPage() {
     setError('')
 
     const multiplier = getMultiplier()
-    const { error: err } = await supabase.from('ot_requests').insert({
-      employee_id: session.user.employeeId,
-      request_date: form.request_date,
-      ot_start: form.ot_start,
-      ot_end: form.ot_end,
-      ot_hours: otHours,
-      day_type: form.day_type,
-      multiplier,
-      ot_hours_multiplied: Math.round(otHours * multiplier * 2) / 2,
-      work_description: form.work_description,
-      reason: form.reason || null,
-      status: 'pending',
-      current_approval_level: 1,
-    })
+    const { data: inserted, error: err } = await supabase
+      .from('ot_requests')
+      .insert({
+        employee_id: session.user.employeeId,
+        request_date: form.request_date,
+        ot_start: form.ot_start,
+        ot_end: form.ot_end,
+        ot_hours: otHours,
+        day_type: form.day_type,
+        multiplier,
+        ot_hours_multiplied: Math.round(otHours * multiplier * 2) / 2,
+        work_description: form.work_description,
+        reason: form.reason || null,
+        status: 'pending',
+        current_approval_level: 1,
+      })
+      .select('id')
+      .single()
 
     if (err) {
       setError('เกิดข้อผิดพลาด กรุณาลองใหม่')
       setSubmitting(false)
       return
+    }
+
+    // แจ้งเตือน LINE ไปยังผู้อนุมัติ
+    if (inserted?.id) {
+      fetch('/api/notify/new-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'ot', requestId: inserted.id }),
+      }).catch(() => {})
     }
 
     router.push('/requests')

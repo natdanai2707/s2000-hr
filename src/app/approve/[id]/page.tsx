@@ -95,6 +95,13 @@ export default function ApprovePage() {
         if (error) throw error
       }
 
+      // แจ้งผลไปยัง LINE (พนักงาน หรือผู้อนุมัติ level ถัดไป)
+      fetch('/api/notify/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'leave', requestId: request.id }),
+      }).catch(() => {})
+
       router.push('/dashboard')
     } catch (e) {
       console.error('approve action error:', e)
