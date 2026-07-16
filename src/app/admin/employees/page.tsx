@@ -13,6 +13,15 @@ interface Row {
   line_user_id: string | null
 }
 
+interface RegRequest {
+  id: string
+  line_user_id: string
+  first_name: string | null
+  last_name: string | null
+  display_name: string | null
+  created_at: string
+}
+
 type Tab = 'emp' | 'appr'
 
 export default function EmployeeLineBindingPage() {
@@ -21,9 +30,12 @@ export default function EmployeeLineBindingPage() {
   const [tab, setTab] = useState<Tab>('emp')
   const [employees, setEmployees] = useState<Row[]>([])
   const [approvers, setApprovers] = useState<Row[]>([])
+  const [regs, setRegs] = useState<RegRequest[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
+  const [copiedRegId, setCopiedRegId] = useState<string | null>(null)
+  const [regBusyId, setRegBusyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -41,7 +53,7 @@ export default function EmployeeLineBindingPage() {
     setLoading(true)
     setError('')
     try {
-      const [empRes, apprRes] = await Promise.all([
+      const [empRes, apprRes, regRes] = await Promise.all([
         supabase
           .from('employees')
           .select('id, employee_code, name, position, line_user_id')
@@ -52,9 +64,16 @@ export default function EmployeeLineBindingPage() {
           .select('id, name, email, line_user_id')
           .eq('is_active', true)
           .order('name'),
+        supabase
+          .from('registration_requests')
+          .select('id, line_user_id, first_name, last_name, display_name, created_at')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false }),
       ])
       if (empRes.error) throw empRes.error
       if (apprRes.error) throw apprRes.error
+      // registration_requests อาจยังไม่มีตาราง (ยังไม่รัน migration) — ไม่ให้ล้มทั้งหน้า
+      if (!regRes.error) setRegs((regRes.data || []) as RegRequest[])
 
       setEmployees(
         (empRes.data || []).map(e => ({
@@ -112,6 +131,34 @@ export default function EmployeeLineBindingPage() {
     }
   }
 
+  async function copyReg(reg: RegRequest) {
+    try {
+      await navigator.clipboard.writeText(reg.line_user_id)
+      setCopiedRegId(reg.id)
+      setTimeout(() => setCopiedRegId(c => (c === reg.id ? null : c)), 2000)
+    } catch {
+      /* คลิปบอร์ดไม่รองรับ — ผู้ใช้เลือกข้อความเองได้ */
+    }
+  }
+
+  async function markRegHandled(reg: RegRequest) {
+    setRegBusyId(reg.id)
+    setError('')
+    try {
+      const { error } = await supabase
+        .from('registration_requests')
+        .update({ status: 'linked', updated_at: new Date().toISOString() })
+        .eq('id', reg.id)
+      if (error) throw error
+      setRegs(rs => rs.filter(r => r.id !== reg.id))
+    } catch (e) {
+      console.error('mark reg handled error:', e)
+      setError('อัปเดตคำขอไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setRegBusyId(null)
+    }
+  }
+
   if (status === 'loading' || !session?.user?.isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -136,6 +183,38 @@ export default function EmployeeLineBindingPage() {
             จากนั้นวางลงในช่องของคนนั้นแล้วกดบันทึก
           </p>
         </div>
+
+        {/* คำขอลงทะเบียนใหม่ (พนักงานกรอกชื่อ+ส่ง LINE ID เข้ามาเอง) */}
+        {regs.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">📝 คำขอลงทะเบียนใหม่ ({regs.length})</h2>
+            <div className="space-y-2">
+              {regs.map(reg => {
+                const fullName = [reg.first_name, reg.last_name].filter(Boolean).join(' ') || reg.display_name || '(ไม่ระบุชื่อ)'
+                return (
+                  <div key={reg.id} className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                    <p className="text-sm font-medium text-gray-800">{fullName}</p>
+                    {reg.display_name && reg.display_name !== fullName && (
+                      <p className="text-xs text-gray-400">ชื่อ LINE: {reg.display_name}</p>
+                    )}
+                    <p className="text-xs font-mono text-gray-500 break-all mt-1 select-all">{reg.line_user_id}</p>
+                    <div className="flex gap-2 mt-2">
+                      <Button variant="secondary" onClick={() => copyReg(reg)} className="flex-1">
+                        {copiedRegId === reg.id ? '✓ คัดลอกแล้ว' : '📋 คัดลอก Line ID'}
+                      </Button>
+                      <Button variant="primary" onClick={() => markRegHandled(reg)} disabled={regBusyId === reg.id} className="flex-1">
+                        {regBusyId === reg.id ? '...' : 'จัดการแล้ว'}
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              คัดลอก Line ID แล้ววางในช่องของพนักงานคนนั้นด้านล่าง จากนั้นกด “จัดการแล้ว” เพื่อซ่อนคำขอ
+            </p>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1">

@@ -27,7 +27,11 @@ export default function DashboardPage() {
   const [calLoading, setCalLoading] = useState(true)
   const [showForceLogout, setShowForceLogout] = useState(false)
   const [loadError, setLoadError] = useState('')
-  const [copiedLineId, setCopiedLineId] = useState(false)
+  const [regFirst, setRegFirst] = useState('')
+  const [regLast, setRegLast] = useState('')
+  const [regSubmitting, setRegSubmitting] = useState(false)
+  const [regDone, setRegDone] = useState(false)
+  const [regError, setRegError] = useState('')
 
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -218,46 +222,98 @@ export default function DashboardPage() {
   }
 
   if (!session?.user?.employeeId) {
-    const lineId = session?.user?.lineUserId || ''
-    const copyLineId = async () => {
+    const submitRegistration = async () => {
+      if (!regFirst.trim() || !regLast.trim()) {
+        setRegError('กรุณากรอกชื่อจริงและนามสกุล')
+        return
+      }
+      setRegSubmitting(true)
+      setRegError('')
       try {
-        await navigator.clipboard.writeText(lineId)
-        setCopiedLineId(true)
-        setTimeout(() => setCopiedLineId(false), 2000)
-      } catch {
-        setCopiedLineId(false)
+        const res = await fetch('/api/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firstName: regFirst.trim(), lastName: regLast.trim() }),
+        })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          throw new Error(j?.error || 'ส่งข้อมูลไม่สำเร็จ')
+        }
+        setRegDone(true)
+      } catch (e: any) {
+        console.error('register error:', e)
+        setRegError(e?.message || 'ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่')
+      } finally {
+        setRegSubmitting(false)
       }
     }
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-        <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-100 p-6 text-center">
-          <div className="text-4xl mb-3">👋</div>
-          <p className="text-gray-800 font-semibold mb-1">ยินดีต้อนรับสู่ S-2000 HR</p>
-          <p className="text-sm text-gray-500 mb-4">
-            บัญชี LINE ของคุณยังไม่ได้ลงทะเบียน<br />
-            เราแจ้ง HR ให้เพิ่มคุณเข้าระบบแล้ว
-          </p>
+        <div className="w-full max-w-sm bg-white rounded-2xl border border-gray-100 p-6">
+          {regDone ? (
+            <div className="text-center">
+              <div className="text-4xl mb-3">✅</div>
+              <p className="text-gray-800 font-semibold mb-1">ส่งข้อมูลเรียบร้อยแล้ว</p>
+              <p className="text-sm text-gray-500 mb-4">
+                ระบบบันทึกชื่อและบัญชี LINE ของคุณแล้ว<br />
+                รอ HR ยืนยันและเพิ่มคุณเข้าระบบ จากนั้นเข้าสู่ระบบใหม่อีกครั้ง
+              </p>
+              <button onClick={() => signOut({ callbackUrl: '/login' })} className="text-xs text-gray-400 underline min-h-11">
+                ออกจากระบบ
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="text-center mb-4">
+                <div className="text-4xl mb-2">👋</div>
+                <p className="text-gray-800 font-semibold">ยินดีต้อนรับสู่ S-2000 HR</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  บัญชี LINE ของคุณยังไม่ได้ลงทะเบียน<br />กรอกชื่อ-นามสกุลเพื่อส่งข้อมูลเข้าระบบ
+                </p>
+              </div>
 
-          <div className="bg-gray-50 rounded-xl p-3 text-left">
-            <p className="text-xs text-gray-400 mb-1">Line ID ของคุณ (ส่งให้ HR):</p>
-            <p className="text-sm font-mono bg-white border border-gray-200 px-3 py-2 rounded break-all select-all">{lineId}</p>
-            <button
-              onClick={copyLineId}
-              className="mt-2 w-full bg-brand-600 text-white rounded-lg py-2.5 min-h-11 text-sm font-medium"
-            >
-              {copiedLineId ? '✓ คัดลอกแล้ว' : '📋 คัดลอก Line ID'}
-            </button>
-          </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อจริง</label>
+                  <input
+                    type="text"
+                    value={regFirst}
+                    onChange={e => { setRegFirst(e.target.value); setRegError('') }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-gray-800"
+                    placeholder="เช่น สมชาย"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">นามสกุล</label>
+                  <input
+                    type="text"
+                    value={regLast}
+                    onChange={e => { setRegLast(e.target.value); setRegError('') }}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-gray-800"
+                    placeholder="เช่น ใจดี"
+                  />
+                </div>
 
-          <p className="text-xs text-gray-400 mt-4">
-            เมื่อ HR ลงทะเบียนเสร็จ ให้เข้าสู่ระบบใหม่อีกครั้ง
-          </p>
-          <button
-            onClick={() => signOut({ callbackUrl: '/login' })}
-            className="mt-3 text-xs text-gray-400 underline min-h-11"
-          >
-            ออกจากระบบ
-          </button>
+                {regError && <p className="text-red-500 text-sm">{regError}</p>}
+
+                <button
+                  onClick={submitRegistration}
+                  disabled={regSubmitting}
+                  className="w-full bg-brand-600 text-white rounded-xl py-3 min-h-11 font-medium disabled:opacity-50"
+                >
+                  {regSubmitting ? 'กำลังส่ง...' : 'ส่งข้อมูลเข้าระบบ'}
+                </button>
+
+                <button
+                  onClick={() => signOut({ callbackUrl: '/login' })}
+                  className="w-full text-xs text-gray-400 underline min-h-11"
+                >
+                  ออกจากระบบ
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     )
