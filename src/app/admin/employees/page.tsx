@@ -34,7 +34,7 @@ export default function EmployeeLineBindingPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savedId, setSavedId] = useState<string | null>(null)
-  const [copiedRegId, setCopiedRegId] = useState<string | null>(null)
+  const [regTarget, setRegTarget] = useState<Record<string, string>>({})
   const [regBusyId, setRegBusyId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -131,29 +131,58 @@ export default function EmployeeLineBindingPage() {
     }
   }
 
-  async function copyReg(reg: RegRequest) {
+  // ผูกคำขอลงทะเบียนกับพนักงานที่เลือก: เซ็ต line_user_id ให้พนักงาน + ปิดคำขอ
+  async function bindReg(reg: RegRequest) {
+    const empId = regTarget[reg.id]
+    if (!empId) {
+      setError('กรุณาเลือกพนักงานที่จะผูกก่อน')
+      return
+    }
+    setRegBusyId(reg.id)
+    setError('')
     try {
-      await navigator.clipboard.writeText(reg.line_user_id)
-      setCopiedRegId(reg.id)
-      setTimeout(() => setCopiedRegId(c => (c === reg.id ? null : c)), 2000)
-    } catch {
-      /* คลิปบอร์ดไม่รองรับ — ผู้ใช้เลือกข้อความเองได้ */
+      const { error: empErr } = await supabase
+        .from('employees')
+        .update({ line_user_id: reg.line_user_id })
+        .eq('id', empId)
+      if (empErr) throw empErr
+
+      const { error: regErr } = await supabase
+        .from('registration_requests')
+        .update({ status: 'linked', updated_at: new Date().toISOString() })
+        .eq('id', reg.id)
+      if (regErr) throw regErr
+
+      // อัปเดตหน้าจอ: ใส่ line_user_id ให้พนักงานในลิสต์ + ลบคำขอออก
+      setEmployees(rows => rows.map(r => (r.id === empId ? { ...r, line_user_id: reg.line_user_id } : r)))
+      setRegs(rs => rs.filter(r => r.id !== reg.id))
+      setRegTarget(t => {
+        const next = { ...t }
+        delete next[reg.id]
+        return next
+      })
+    } catch (e) {
+      console.error('bind reg error:', e)
+      setError('ผูกไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setRegBusyId(null)
     }
   }
 
-  async function markRegHandled(reg: RegRequest) {
+  // คำขอที่ไม่ใช่พนักงานจริง — ปิดทิ้ง
+  async function dismissReg(reg: RegRequest) {
     setRegBusyId(reg.id)
     setError('')
     try {
       const { error } = await supabase
         .from('registration_requests')
-        .update({ status: 'linked', updated_at: new Date().toISOString() })
+        .update({ status: 'dismissed', updated_at: new Date().toISOString() })
         .eq('id', reg.id)
       if (error) throw error
       setRegs(rs => rs.filter(r => r.id !== reg.id))
     } catch (e) {
-      console.error('mark reg handled error:', e)
-      setError('อัปเดตคำขอไม่สำเร็จ กรุณาลองใหม่')
+      console.error('dismiss reg error:', e)
+      setError('ปิดคำขอไม่สำเร็จ กรุณาลองใหม่')
     } finally {
       setRegBusyId(null)
     }
@@ -198,12 +227,37 @@ export default function EmployeeLineBindingPage() {
                       <p className="text-xs text-gray-400">ชื่อ LINE: {reg.display_name}</p>
                     )}
                     <p className="text-xs font-mono text-gray-500 break-all mt-1 select-all">{reg.line_user_id}</p>
+
+                    {/* เลือกพนักงานที่จะผูก แล้วกดผูกในคลิกเดียว */}
+                    <select
+                      value={regTarget[reg.id] || ''}
+                      onChange={e => setRegTarget(t => ({ ...t, [reg.id]: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-sm text-gray-800 bg-white mt-2"
+                    >
+                      <option value="">เลือกพนักงานที่จะผูก...</option>
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.name} ({emp.subtitle}){emp.line_user_id ? ' · ผูกแล้ว' : ''}
+                        </option>
+                      ))}
+                    </select>
+
                     <div className="flex gap-2 mt-2">
-                      <Button variant="secondary" onClick={() => copyReg(reg)} className="flex-1">
-                        {copiedRegId === reg.id ? '✓ คัดลอกแล้ว' : '📋 คัดลอก Line ID'}
+                      <Button
+                        variant="primary"
+                        onClick={() => bindReg(reg)}
+                        disabled={regBusyId === reg.id || !regTarget[reg.id]}
+                        className="flex-1"
+                      >
+                        {regBusyId === reg.id ? '...' : '🔗 ผูกกับพนักงานนี้'}
                       </Button>
-                      <Button variant="primary" onClick={() => markRegHandled(reg)} disabled={regBusyId === reg.id} className="flex-1">
-                        {regBusyId === reg.id ? '...' : 'จัดการแล้ว'}
+                      <Button
+                        variant="secondary"
+                        onClick={() => dismissReg(reg)}
+                        disabled={regBusyId === reg.id}
+                        className="shrink-0"
+                      >
+                        ไม่ใช่พนักงาน
                       </Button>
                     </div>
                   </div>
@@ -211,7 +265,7 @@ export default function EmployeeLineBindingPage() {
               })}
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              คัดลอก Line ID แล้ววางในช่องของพนักงานคนนั้นด้านล่าง จากนั้นกด “จัดการแล้ว” เพื่อซ่อนคำขอ
+              เลือกพนักงานที่ตรงกับคำขอ แล้วกด “ผูกกับพนักงานนี้” ระบบจะตั้งค่า Line ID ให้อัตโนมัติ
             </p>
           </div>
         )}
