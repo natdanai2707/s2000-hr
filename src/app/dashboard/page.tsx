@@ -460,7 +460,7 @@ export default function DashboardPage() {
           <button onClick={() => router.push('/attendance')} className="bg-orange-500 text-white rounded-xl p-3 text-left">
             <div className="text-xl mb-1">📍</div>
             <div className="font-medium text-xs">เช็คอิน/เอาท์</div>
-            <div className="text-xs opacity-70 mt-0.5">พนักงานประจำไซต์</div>
+            <div className="text-xs opacity-70 mt-0.5">บันทึกเวลาเข้า-ออกงาน</div>
           </button>
           <button onClick={() => router.push('/ot/new')} className="bg-yellow-500 text-white rounded-xl p-3 text-left">
             <div className="text-xl mb-1">⏰</div>
