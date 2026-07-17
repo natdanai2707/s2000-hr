@@ -492,6 +492,15 @@ export default function DashboardPage() {
               </div>
             </button>
           )}
+          {session.user.approverId && (
+            <button onClick={() => router.push('/worklog/approve')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
+              <span className="text-xl">✅</span>
+              <div>
+                <p className="font-medium text-xs text-gray-800">อนุมัติบันทึกงาน</p>
+                <p className="text-xs text-gray-400">เซ็นรับรองลูกทีม</p>
+              </div>
+            </button>
+          )}
         </div>
 
         {/* My Leave Requests */}
