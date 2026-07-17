@@ -17,6 +17,7 @@ interface WorkLogEntry {
   site_location: string
   water_allowance: string
   daily_allowance: string
+  other_income: string
   notes: string
   log_date: string
 }
@@ -30,6 +31,7 @@ const emptyEntry = (): WorkLogEntry => ({
   site_location: '',
   water_allowance: '',
   daily_allowance: '',
+  other_income: '',
   notes: '',
   log_date: todayISO(),
 })
@@ -87,6 +89,7 @@ export default function WorkLogPage() {
       site_location: log.site_location || '',
       water_allowance: log.water_allowance?.toString() || '',
       daily_allowance: log.daily_allowance?.toString() || '',
+      other_income: log.other_income?.toString() || '',
       notes: log.notes || '',
       log_date: log.log_date,
     })
@@ -126,15 +129,17 @@ export default function WorkLogPage() {
       site_location: entry.site_location || null,
       water_allowance: entry.water_allowance ? parseFloat(entry.water_allowance) : 0,
       daily_allowance: entry.daily_allowance ? parseFloat(entry.daily_allowance) : 0,
+      other_income: entry.other_income ? parseFloat(entry.other_income) : 0,
       notes: entry.notes || null,
       updated_at: new Date().toISOString(),
     }
 
     let err
     if (editingId) {
+      // แก้ไขแล้วต้องให้หัวหน้าอนุมัติใหม่
       const { error: e } = await supabase
         .from('work_logs')
-        .update(payload)
+        .update({ ...payload, approval_status: 'pending', approved_by: null, approved_at: null })
         .eq('id', editingId)
       err = e
     } else {
@@ -282,6 +287,18 @@ export default function WorkLogPage() {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">เงินได้อื่นๆ (บาท)</label>
+            <input
+              type="number"
+              value={entry.other_income}
+              onChange={e => setEntry({ ...entry, other_income: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800"
+              placeholder="0"
+              min={0}
+            />
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">หมายเหตุ</label>
             <textarea
               value={entry.notes}
@@ -370,7 +387,12 @@ export default function WorkLogPage() {
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <p className="font-medium text-gray-800 text-sm">{log.task_description}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-medium text-gray-800 text-sm">{log.task_description}</p>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full ${log.approval_status === 'approved' ? 'bg-[var(--color-approved-bg)] text-[var(--color-approved-fg)]' : 'bg-[var(--color-pending-bg)] text-[var(--color-pending-fg)]'}`}>
+                            {log.approval_status === 'approved' ? '✓ หัวหน้าอนุมัติแล้ว' : 'รอหัวหน้าอนุมัติ'}
+                          </span>
+                        </div>
                         {log.site_location && (
                           <p className="text-xs text-gray-500 mt-0.5">📍 {log.site_location}</p>
                         )}

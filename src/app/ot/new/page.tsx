@@ -62,22 +62,11 @@ export default function OTRequestPage() {
     return Math.round(((endMin - startMin) / 60) * 2) / 2 // round to 0.5
   }
 
+  // ตัวคูณยังคำนวณเบื้องหลังตามกฎหมาย (ไม่โชว์ให้ลูกจ้าง) เพื่อเก็บลงฐานข้อมูล
   function getMultiplier(): number {
     if (form.day_type === 'holiday') return 3.0
     if (form.day_type === 'weekend') return 2.0
     return 1.5
-  }
-
-  function getDayTypeLabel(): string {
-    if (form.day_type === 'holiday') return 'วันหยุดนักขัตฤกษ์ (3.0x)'
-    if (form.day_type === 'weekend') return 'วันหยุดประจำสัปดาห์ (2.0x)'
-    return 'วันทำงานปกติ (1.5x)'
-  }
-
-  function getDayTypeColor(): string {
-    if (form.day_type === 'holiday') return 'bg-red-50 text-red-700 border-red-200'
-    if (form.day_type === 'weekend') return 'bg-orange-50 text-orange-700 border-orange-200'
-    return 'bg-blue-50 text-blue-700 border-blue-200'
   }
 
   async function handleSubmit() {
@@ -150,32 +139,12 @@ export default function OTRequestPage() {
   }
 
   const otHours = calcOtHours()
-  const multiplier = getMultiplier()
 
   return (
     <div className="min-h-screen bg-gray-50">
       <PageHeader title="ขอทำ OT" />
 
       <div className="max-w-lg mx-auto px-4 py-6 space-y-4">
-
-        {/* กฎหมาย OT */}
-        <div className="bg-gray-50 rounded-xl p-3 border border-gray-200">
-          <p className="text-xs text-gray-500 font-medium mb-1">อัตรา OT ตามกฎหมาย (พ.ร.บ.คุ้มครองแรงงาน มาตรา 61)</p>
-          <div className="grid grid-cols-3 gap-1 text-xs text-center">
-            <div className="bg-blue-50 rounded-lg py-1.5 text-blue-700">
-              <p className="font-bold">1.5x</p>
-              <p>วันปกติ</p>
-            </div>
-            <div className="bg-orange-50 rounded-lg py-1.5 text-orange-700">
-              <p className="font-bold">2.0x</p>
-              <p>วันหยุด</p>
-            </div>
-            <div className="bg-red-50 rounded-lg py-1.5 text-red-700">
-              <p className="font-bold">3.0x</p>
-              <p>วันหยุดนักขัตฤกษ์</p>
-            </div>
-          </div>
-        </div>
 
         {/* วันที่ */}
         <div>
@@ -186,24 +155,6 @@ export default function OTRequestPage() {
             onChange={e => setForm({ ...form, request_date: e.target.value })}
             className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800"
           />
-        </div>
-
-        {/* ประเภทวัน (auto detect แต่แก้ได้) */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">ประเภทวัน</label>
-          <div className={`rounded-xl p-3 border mb-2 ${getDayTypeColor()}`}>
-            <p className="text-sm font-medium">📅 {getDayTypeLabel()}</p>
-            <p className="text-xs mt-0.5 opacity-70">ตรวจสอบอัตโนมัติจากวันที่เลือก</p>
-          </div>
-          <select
-            value={form.day_type}
-            onChange={e => setForm({ ...form, day_type: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-gray-800 bg-white text-sm"
-          >
-            <option value="normal">วันทำงานปกติ (1.5x)</option>
-            <option value="weekend">วันหยุดประจำสัปดาห์ (2.0x)</option>
-            <option value="holiday">วันหยุดนักขัตฤกษ์ (3.0x)</option>
-          </select>
         </div>
 
         {/* เวลา OT */}
@@ -229,24 +180,11 @@ export default function OTRequestPage() {
         </div>
         <FieldError message={fieldErrors.time} />
 
-        {/* สรุป OT */}
+        {/* แสดงชั่วโมง OT ที่กรอก (ไม่โชว์อัตรา/ตัวคูณให้ลูกจ้าง) */}
         {otHours > 0 && (
-          <div className="bg-green-50 rounded-xl p-3 border border-green-200">
-            <p className="text-sm font-semibold text-green-800 mb-1">สรุปการคำนวณ OT</p>
-            <div className="grid grid-cols-3 gap-2 text-center text-sm">
-              <div>
-                <p className="text-xs text-gray-500">ชม. OT จริง</p>
-                <p className="font-bold text-gray-800">{otHours} ชม.</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">ตัวคูณ</p>
-                <p className="font-bold text-gray-800">{multiplier}x</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">ชม. OT คิดเงิน</p>
-                <p className="font-bold text-green-700">{Math.round(otHours * multiplier * 2) / 2} ชม.</p>
-              </div>
-            </div>
+          <div className="bg-green-50 rounded-xl p-3 border border-green-200 text-center">
+            <p className="text-xs text-gray-500">รวมเวลา OT</p>
+            <p className="font-bold text-green-700 text-lg">{otHours} ชม.</p>
           </div>
         )}
 

@@ -20,9 +20,12 @@ interface AttendanceLog {
   id: string
   check_in: string
   check_out: string | null
-  site_location: SiteLocation
+  site_location: SiteLocation | null
   note: string | null
   selfie_url?: string | null
+  is_manual?: boolean
+  is_outside_geofence?: boolean
+  manual_location?: string | null
 }
 
 function calcDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -67,6 +70,11 @@ export default function AttendancePage() {
   const [actionError, setActionError] = useState('')
   const [selfie, setSelfie] = useState<File | null>(null)
   const [selfiePreview, setSelfiePreview] = useState<string>('')
+  // บันทึกย้อนหลัง (กรอกเอง)
+  const [manualMode, setManualMode] = useState(false)
+  const [manualForm, setManualForm] = useState({ date: '', inTime: '', outTime: '', location: '', note: '' })
+  const [manualError, setManualError] = useState('')
+  const [manualDone, setManualDone] = useState('')
 
   const today = todayISO()
 
@@ -238,6 +246,68 @@ export default function AttendancePage() {
     }
   }
 
+  // บันทึกเวลาย้อนหลัง กรอกสถานที่เอง — flag ว่าเป็นการทำนอกพื้นที่ + แจ้งแอดมิน
+  async function handleManualEntry() {
+    if (!session?.user?.employeeId) return
+    setManualError('')
+    setManualDone('')
+    if (!manualForm.date || !manualForm.inTime) {
+      setManualError('กรุณากรอกวันที่และเวลาเข้างาน')
+      return
+    }
+    if (!manualForm.location.trim()) {
+      setManualError('กรุณากรอกสถานที่ทำงาน')
+      return
+    }
+    if (manualForm.outTime && manualForm.outTime <= manualForm.inTime) {
+      setManualError('เวลาออกงานต้องหลังเวลาเข้างาน')
+      return
+    }
+
+    setProcessing(true)
+    try {
+      const checkIn = new Date(`${manualForm.date}T${manualForm.inTime}:00+07:00`).toISOString()
+      const checkOut = manualForm.outTime
+        ? new Date(`${manualForm.date}T${manualForm.outTime}:00+07:00`).toISOString()
+        : null
+
+      const { error } = await supabase.from('attendance_logs').insert({
+        employee_id: session.user.employeeId,
+        site_location_id: null,
+        check_in: checkIn,
+        check_out: checkOut,
+        note: manualForm.note || null,
+        is_manual: true,
+        is_outside_geofence: true,
+        manual_location: manualForm.location.trim(),
+      })
+      if (error) throw error
+
+      // แจ้งแอดมินว่ามีการบันทึกย้อนหลังนอกพื้นที่
+      fetch('/api/notify/manual-attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: session.user.employeeName || 'พนักงาน',
+          date: manualForm.date,
+          location: manualForm.location.trim(),
+          inTime: manualForm.inTime,
+          outTime: manualForm.outTime || null,
+        }),
+      }).catch(() => {})
+
+      setManualDone('บันทึกย้อนหลังเรียบร้อย (ระบบแจ้งแอดมินและกำกับว่าทำนอกพื้นที่)')
+      setManualForm({ date: '', inTime: '', outTime: '', location: '', note: '' })
+      setManualMode(false)
+      await fetchData()
+    } catch (e) {
+      console.error('manual attendance error:', e)
+      setManualError('บันทึกย้อนหลังไม่สำเร็จ กรุณาลองใหม่')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -283,7 +353,7 @@ export default function AttendancePage() {
         {activeLog && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
             <p className="text-sm font-semibold text-blue-800 mb-2">กำลังทำงานอยู่</p>
-            <p className="text-sm text-gray-700">📍 {(activeLog.site_location as any)?.name}</p>
+            <p className="text-sm text-gray-700">📍 {activeLog.site_location?.name || activeLog.manual_location || 'ไม่ระบุสถานที่'}</p>
             <p className="text-sm text-green-600 font-semibold mt-1">เช็คอิน {formatTime(activeLog.check_in)}</p>
             {activeLog.note && <p className="text-xs text-gray-400 mt-1">{activeLog.note}</p>}
             <button
@@ -379,6 +449,95 @@ export default function AttendancePage() {
           </div>
         )}
 
+        {/* บันทึกย้อนหลัง / กรอกเอง */}
+        {manualDone && (
+          <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+            <p className="text-green-700 text-sm">{manualDone}</p>
+          </div>
+        )}
+        {!manualMode ? (
+          <button
+            onClick={() => { setManualMode(true); setManualError(''); setManualDone(''); setManualForm(f => ({ ...f, date: today })) }}
+            className="w-full bg-white border border-gray-200 rounded-xl py-3 min-h-11 text-sm text-gray-600 flex items-center justify-center gap-2"
+          >
+            🕐 ลืมเช็คอิน/เอาท์? บันทึกย้อนหลัง
+          </button>
+        ) : (
+          <div className="bg-white rounded-xl p-4 border border-amber-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="font-medium text-gray-800 text-sm">บันทึกย้อนหลัง (กรอกเอง)</p>
+              <button onClick={() => setManualMode(false)} className="text-gray-400 text-sm min-h-11 px-2">ปิด</button>
+            </div>
+            <div className="bg-amber-50 rounded-lg px-3 py-2">
+              <p className="text-xs text-amber-700">
+                ใช้เมื่อออกไซต์ด่วนแล้วลืมเช็คอิน/เอาท์ ระบบจะกำกับว่าเป็นการบันทึกย้อนหลัง
+                นอกพื้นที่ที่กำหนด และแจ้งแอดมินให้ตรวจสอบ
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">วันที่</label>
+              <input
+                type="date"
+                value={manualForm.date}
+                max={today}
+                onChange={e => setManualForm(f => ({ ...f, date: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-gray-800"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">เวลาเข้า</label>
+                <input
+                  type="time"
+                  value={manualForm.inTime}
+                  onChange={e => setManualForm(f => ({ ...f, inTime: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-gray-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">เวลาออก (ถ้ามี)</label>
+                <input
+                  type="time"
+                  value={manualForm.outTime}
+                  onChange={e => setManualForm(f => ({ ...f, outTime: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-gray-800"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">สถานที่ทำงาน</label>
+              <input
+                type="text"
+                value={manualForm.location}
+                onChange={e => setManualForm(f => ({ ...f, location: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-gray-800"
+                placeholder="เช่น ไซต์หาดใหญ่, ออฟฟิศ, บ้านลูกค้า"
+              />
+            </div>
+
+            <input
+              type="text"
+              value={manualForm.note}
+              onChange={e => setManualForm(f => ({ ...f, note: e.target.value }))}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 min-h-11 text-sm text-gray-800"
+              placeholder="หมายเหตุ (ถ้ามี)"
+            />
+
+            {manualError && <p className="text-red-500 text-sm">{manualError}</p>}
+
+            <button
+              onClick={handleManualEntry}
+              disabled={processing}
+              className="w-full bg-amber-500 text-white rounded-xl py-3 min-h-11 font-semibold disabled:opacity-50"
+            >
+              {processing ? 'กำลังบันทึก...' : 'บันทึกย้อนหลัง'}
+            </button>
+          </div>
+        )}
+
         {/* ประวัติวันนี้ */}
         {todayLogs.length > 0 && (
           <div>
@@ -391,13 +550,18 @@ export default function AttendancePage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-gray-800">
-                        ครั้งที่ {todayLogs.length - idx} · {(log.site_location as any)?.name}
+                        ครั้งที่ {todayLogs.length - idx} · {log.site_location?.name || log.manual_location || 'ไม่ระบุสถานที่'}
                       </p>
+                      {(log.is_manual || log.is_outside_geofence) && (
+                        <span className="inline-block text-[11px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full mt-0.5">
+                          ⚠️ บันทึกย้อนหลัง · นอกพื้นที่
+                        </span>
+                      )}
                       <div className="flex gap-4 mt-1 text-xs">
                         <span className="text-green-600">เข้า {formatTime(log.check_in)}</span>
                         {log.check_out
                           ? <span className="text-gray-500">ออก {formatTime(log.check_out)}</span>
-                          : <span className="text-orange-500">ยังอยู่ในไซต์</span>}
+                          : <span className="text-orange-500">ยังไม่เช็คเอาท์</span>}
                         {log.check_out && (
                           <span className="text-gray-400">{calcDuration(log.check_in, log.check_out)}</span>
                         )}

@@ -460,7 +460,7 @@ export default function DashboardPage() {
           <button onClick={() => router.push('/attendance')} className="bg-orange-500 text-white rounded-xl p-3 text-left">
             <div className="text-xl mb-1">📍</div>
             <div className="font-medium text-xs">เช็คอิน/เอาท์</div>
-            <div className="text-xs opacity-70 mt-0.5">พนักงานประจำไซต์</div>
+            <div className="text-xs opacity-70 mt-0.5">บันทึกเวลาเข้า-ออกงาน</div>
           </button>
           <button onClick={() => router.push('/ot/new')} className="bg-yellow-500 text-white rounded-xl p-3 text-left">
             <div className="text-xl mb-1">⏰</div>
@@ -489,6 +489,15 @@ export default function DashboardPage() {
               <div>
                 <p className="font-medium text-xs text-gray-800">สรุปทีมวันนี้</p>
                 <p className="text-xs text-gray-400">ใครลา/อยู่ไซต์</p>
+              </div>
+            </button>
+          )}
+          {session.user.approverId && (
+            <button onClick={() => router.push('/worklog/approve')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
+              <span className="text-xl">✅</span>
+              <div>
+                <p className="font-medium text-xs text-gray-800">อนุมัติบันทึกงาน</p>
+                <p className="text-xs text-gray-400">เซ็นรับรองลูกทีม</p>
               </div>
             </button>
           )}
