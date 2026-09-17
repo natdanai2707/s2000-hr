@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireUser } from '@/lib/auth'
 import { notify } from '@/lib/notifications'
+import { safeObjectName } from '@/lib/storage'
 import { fail, type ActionResult } from './types'
 
 export interface ReceiptLineInput {
@@ -27,8 +28,7 @@ export async function confirmGoodsReceipt(poId: string, fd: FormData, lines: Rec
   let attachmentPath: string | null = null
   const file = fd.get('attachment')
   if (file instanceof File && file.size > 0) {
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-    attachmentPath = `projects/${po.project_id}/receipts/${Date.now()}.${ext}`
+    attachmentPath = `projects/${po.project_id}/receipts/${safeObjectName(file.name, 'jpg')}`
     const { error: upErr } = await supabase.storage.from('project-files').upload(attachmentPath, Buffer.from(await file.arrayBuffer()), {
       contentType: file.type || 'image/jpeg',
     })
