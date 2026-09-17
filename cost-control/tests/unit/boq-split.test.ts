@@ -25,7 +25,8 @@ describe('splitRows: แตกแถววัสดุ/แรงงาน', () =
   it('แถวที่ไม่มีปริมาณกลายเป็นหมวด', () => {
     const r = splitRows(rows, mapping)
     expect(r.sections.map(s => s.name)).toEqual(['งานโครงสร้าง', 'งานสถาปัตย์'])
-    expect(r.sections[0].code).toBe('1')
+    // code เก็บชื่อหมวดใหญ่ที่ครอบอยู่ ไฟล์นี้มีหมวดชั้นเดียวจึงเป็น null
+    expect(r.sections[0].code).toBeNull()
   })
 
   it('แถวที่มีราคาวัสดุและแรงงานแยกกันแตกเป็น 2 items item_no เดียวกัน', () => {

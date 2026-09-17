@@ -1,10 +1,12 @@
 import ExcelJS from 'exceljs'
+import { headerScore, isTwoRowHeader, combineHeaderRows } from './split'
 
 export interface SheetPreview {
   name: string
-  header_row: number // 1-based
+  header_row: number // 1-based แถวหัวตารางแถวแรก
+  header_rows: number // 1 หรือ 2 (รูปแบบ S-2000 ใช้ 2 แถว: กลุ่ม + หัวย่อย)
   headers: unknown[]
-  rows: unknown[][] // ทั้งหมด (ไม่รวม header)
+  rows: unknown[][] // ข้อมูลทั้งหมดหลังหัวตาราง
   preview: unknown[][] // 20 แถวแรก
 }
 
@@ -16,21 +18,26 @@ function rowValues(row: ExcelJS.Row, colCount: number): unknown[] {
     if (v && typeof v === 'object' && 'result' in v) out.push((v as ExcelJS.CellFormulaValue).result ?? null)
     else if (v && typeof v === 'object' && 'richText' in v)
       out.push((v as ExcelJS.CellRichTextValue).richText.map(r => r.text).join(''))
+    else if (v && typeof v === 'object' && 'error' in v) out.push(null)
     else out.push(v ?? null)
   }
   return out
 }
 
-// หาแถวหัวตาราง: แถวแรกที่มีข้อความอย่างน้อย 3 ช่องและมีคำว่า รายการ/ปริมาณ/หน่วย
+// หาแถวหัวตารางด้วยการให้คะแนน แถวที่มีชื่อคอลัมน์ที่รู้จักมากที่สุดคือหัวตาราง
+// วิธีนี้ทนต่อหัวกระดาษที่มีคำว่า PROJECT / BILL OF QUANTITIES อยู่ด้านบน
 function findHeaderRow(ws: ExcelJS.Worksheet, colCount: number): number {
-  const maxScan = Math.min(ws.rowCount, 30)
+  const maxScan = Math.min(ws.rowCount, 40)
+  let best = 0
+  let bestScore = 0
   for (let r = 1; r <= maxScan; r++) {
-    const vals = rowValues(ws.getRow(r), colCount)
-    const texts = vals.map(v => (v === null ? '' : String(v))).filter(Boolean)
-    const joined = texts.join('|')
-    if (texts.length >= 3 && /(รายการ|ปริมาณ|หน่วย|description|qty|unit)/i.test(joined)) return r
+    const score = headerScore(rowValues(ws.getRow(r), colCount))
+    if (score > bestScore) {
+      bestScore = score
+      best = r
+    }
   }
-  return 1
+  return bestScore >= 3 ? best : 1
 }
 
 export async function parseWorkbook(buffer: ArrayBuffer | Buffer): Promise<SheetPreview[]> {
@@ -40,15 +47,30 @@ export async function parseWorkbook(buffer: ArrayBuffer | Buffer): Promise<Sheet
   wb.eachSheet(ws => {
     const colCount = Math.max(ws.actualColumnCount || ws.columnCount || 0, 1)
     const headerRow = findHeaderRow(ws, colCount)
-    const headers = rowValues(ws.getRow(headerRow), colCount)
+    const first = rowValues(ws.getRow(headerRow), colCount)
+    const second = headerRow < ws.rowCount ? rowValues(ws.getRow(headerRow + 1), colCount) : []
+
+    // รูปแบบ S-2000 ใช้หัวตาราง 2 แถว แถวบนเป็นกลุ่ม (MATERIAL, LABOUR)
+    // แถวล่างเป็นหัวย่อย (@, SUB TOTAL) ต้องรวมกันจึงจะแยกราคาต่อหน่วยออกจากยอดรวมได้
+    const twoRow = isTwoRowHeader(first, second)
+    const headers = twoRow ? combineHeaderRows(first, second) : first
+    const dataStart = headerRow + (twoRow ? 2 : 1)
+
     const rows: unknown[][] = []
-    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
+    for (let r = dataStart; r <= ws.rowCount; r++) {
       const vals = rowValues(ws.getRow(r), colCount)
       if (vals.every(v => v === null || v === '')) continue
       rows.push(vals)
     }
     if (rows.length === 0) return
-    sheets.push({ name: ws.name, header_row: headerRow, headers, rows, preview: rows.slice(0, 20) })
+    sheets.push({
+      name: ws.name,
+      header_row: headerRow,
+      header_rows: twoRow ? 2 : 1,
+      headers,
+      rows,
+      preview: rows.slice(0, 20),
+    })
   })
   return sheets
 }
