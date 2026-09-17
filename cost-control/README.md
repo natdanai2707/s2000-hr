@@ -33,6 +33,7 @@ cost-control/
    | `20260911_0002_audit_and_functions.sql` | audit trigger, ล็อก BOQ, ฟังก์ชันธุรกิจ (ยืนยัน BOQ, VO, ส่ง/อนุมัติ PR, ออก PO, สถานะ PO/invoice) |
    | `20260911_0003_rls.sql` | RLS policy ทุกตารางและ storage |
    | `20260911_0004_views.sql` | `v_boq_item_costs`, `v_project_summary`, `v_boq_section_summary` |
+   | `20260917_0005_source_file_name.sql` | เก็บชื่อไฟล์ BOQ เดิมที่ผู้ใช้อัปโหลด (path ใน Storage ต้องเป็น ASCII) |
 
 4. คัดลอกค่าใน Project Settings > API: Project URL, anon key, service_role key
 

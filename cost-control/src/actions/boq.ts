@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireUser } from '@/lib/auth'
 import { parseWorkbook } from '@/lib/boq/parse'
 import { autoDetectMapping, splitRows, type ColumnMapping } from '@/lib/boq/split'
+import { safeObjectName } from '@/lib/storage'
 import type { BoqVersionType } from '@/lib/types'
 import { fail, type ActionResult } from './types'
 
@@ -19,6 +20,7 @@ export interface UploadPreviewSheet {
 
 export interface UploadPreviewResult {
   file_path: string
+  file_name: string
   sheets: UploadPreviewSheet[]
 }
 
@@ -39,7 +41,8 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
   }
   if (sheets.length === 0) return fail('ไม่พบข้อมูลในไฟล์')
 
-  const path = `projects/${projectId}/boq/${Date.now()}-${file.name.replace(/[^\w.\-ก-๙]/g, '_')}`
+  // ชื่อไฟล์ใน Storage ต้องเป็น ASCII ชื่อเดิม (เช่น ภาษาไทย) เก็บไว้ในคอลัมน์ source_file_name
+  const path = `projects/${projectId}/boq/${safeObjectName(file.name, 'xlsx')}`
   const { error: upErr } = await supabase.storage.from('project-files').upload(path, buffer, {
     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     upsert: false,
@@ -56,6 +59,7 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
     ok: true,
     data: {
       file_path: path,
+      file_name: file.name,
       sheets: sheets.map(s => {
         const tpl = templateMap.get(s.name)
         return {
@@ -82,6 +86,7 @@ export interface ImportSheetInput {
 export async function importBoq(
   projectId: string,
   filePath: string,
+  fileName: string,
   type: BoqVersionType,
   sheets: ImportSheetInput[],
   defaultMarkupPct: number,
@@ -108,11 +113,11 @@ export async function importBoq(
     const { data, error } = await supabase.rpc('create_variation_order', { p_project_id: projectId, p_note: note || null })
     if (error) return fail(error)
     versionId = data as string
-    await supabase.from('boq_versions').update({ source_file_path: filePath }).eq('id', versionId)
+    await supabase.from('boq_versions').update({ source_file_path: filePath, source_file_name: fileName || null }).eq('id', versionId)
   } else {
     const { data, error } = await supabase
       .from('boq_versions')
-      .insert({ project_id: projectId, version_no: nextNo, type: 'quotation', status: 'draft', source_file_path: filePath, note: note || null, created_by: user.id })
+      .insert({ project_id: projectId, version_no: nextNo, type: 'quotation', status: 'draft', source_file_path: filePath, source_file_name: fileName || null, note: note || null, created_by: user.id })
       .select('id')
       .single()
     if (error) return fail(error)

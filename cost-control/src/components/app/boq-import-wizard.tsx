@@ -68,6 +68,7 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
     const res = await importBoq(
       projectId,
       preview.file_path,
+      preview.file_name,
       type,
       preview.sheets.map(s => ({ name: s.name, mapping: mappings[s.name] ?? {}, include: include[s.name] ?? false })),
       Number(markup) || 0,

@@ -72,7 +72,9 @@ export default async function BoqVersionPage({ params }: { params: Promise<{ id:
           </span>
         )}
         {version.note && <span className="text-muted-foreground">· {version.note}</span>}
-        {version.source_file_path && <span className="text-muted-foreground">· ไฟล์ต้นทาง {version.source_file_path.split('/').pop()}</span>}
+        {version.source_file_path && (
+          <span className="text-muted-foreground">· ไฟล์ต้นทาง {version.source_file_name ?? version.source_file_path.split('/').pop()}</span>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6">

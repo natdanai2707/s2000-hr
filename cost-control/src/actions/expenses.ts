@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireUser } from '@/lib/auth'
+import { safeObjectName } from '@/lib/storage'
 import { fail, type ActionResult } from './types'
 
 // ค่าใช้จ่ายเบ็ดเตล็ดที่ไม่ผ่าน PO นับเป็น actual และ paid พร้อมกัน ต้องผูก BOQ item เสมอ
@@ -24,8 +25,7 @@ export async function createExpense(fd: FormData): Promise<ActionResult<{ id: st
   let attachmentPath: string | null = null
   const file = fd.get('attachment')
   if (file instanceof File && file.size > 0) {
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-    attachmentPath = `projects/${projectId}/expenses/${Date.now()}.${ext}`
+    attachmentPath = `projects/${projectId}/expenses/${safeObjectName(file.name, 'jpg')}`
     const { error: upErr } = await supabase.storage.from('project-files').upload(attachmentPath, Buffer.from(await file.arrayBuffer()), {
       contentType: file.type || 'application/octet-stream',
     })
