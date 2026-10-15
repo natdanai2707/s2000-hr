@@ -56,6 +56,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         backHref="/projects"
         actions={
           <>
+            {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/edit`}>แก้ไขโครงการ</Link></Button>}
             {canManage && s.confirmed_version_id && <EditBoqButton projectId={id} />}
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/boq/import`}>นำเข้า BOQ</Link></Button>}
             <Button asChild variant="outline"><Link href={`/pr/new?project=${id}`}>ขอซื้อ</Link></Button>

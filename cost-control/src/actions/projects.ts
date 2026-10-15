@@ -46,24 +46,35 @@ export async function createProject(fd: FormData): Promise<ActionResult<{ id: st
   return { ok: true, data: { id: data.id } }
 }
 
+const PROJECT_STATUSES = ['draft', 'active', 'closing', 'closed'] as const
+
 export async function updateProject(projectId: string, fd: FormData): Promise<ActionResult> {
   await requireUser()
   const supabase = await createClient()
-  const { error } = await supabase
-    .from('projects')
-    .update({
-      name: str(fd, 'name'),
-      customer_name: str(fd, 'customer_name') || null,
-      branch_id: str(fd, 'branch_id'),
-      contract_value: num(fd, 'contract_value'),
-      start_date: dateOrNull(fd, 'start_date'),
-      planned_end_date: dateOrNull(fd, 'planned_end_date'),
-      retention_pct: num(fd, 'retention_pct'),
-      penalty_per_day: num(fd, 'penalty_per_day'),
-    })
-    .eq('id', projectId)
+  const name = str(fd, 'name')
+  if (!name) return fail('กรุณากรอกชื่อโครงการ')
+
+  const status = str(fd, 'status')
+  const patch: Record<string, unknown> = {
+    name,
+    customer_name: str(fd, 'customer_name') || null,
+    branch_id: str(fd, 'branch_id'),
+    contract_value: num(fd, 'contract_value'),
+    start_date: dateOrNull(fd, 'start_date'),
+    planned_end_date: dateOrNull(fd, 'planned_end_date'),
+    retention_pct: num(fd, 'retention_pct'),
+    penalty_per_day: num(fd, 'penalty_per_day'),
+  }
+  if ((PROJECT_STATUSES as readonly string[]).includes(status)) patch.status = status
+
+  // ต้องเช็คว่ามีแถวกลับมาจริง เพราะถ้า RLS ปฏิเสธ Supabase จะไม่คืน error แต่ไม่มีอะไรถูกแก้
+  const { data, error } = await supabase.from('projects').update(patch).eq('id', projectId).select('id')
   if (error) return fail(error)
+  if (!data || data.length === 0) return fail('ไม่มีสิทธิ์แก้ไขโครงการนี้ หรือไม่พบโครงการ')
+
   revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/projects')
+  revalidatePath('/')
   return { ok: true, data: undefined }
 }
 
