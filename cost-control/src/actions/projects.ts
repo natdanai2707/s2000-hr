@@ -86,3 +86,60 @@ export async function removeProjectMember(projectId: string, userId: string): Pr
   revalidatePath(`/projects/${projectId}`)
   return { ok: true, data: undefined }
 }
+
+export interface ProjectDeleteBlocker {
+  label: string
+  count: number
+}
+
+// นับเอกสารต้นทุนที่ผูกกับโครงการ ถ้ามีแม้ชิ้นเดียวจะลบโครงการไม่ได้
+async function countProjectDocuments(projectId: string): Promise<ProjectDeleteBlocker[]> {
+  const supabase = await createClient()
+  const head = { count: 'exact' as const, head: true }
+  const [pr, po, invoice, expense, agreement] = await Promise.all([
+    supabase.from('purchase_requests').select('id', head).eq('project_id', projectId),
+    supabase.from('purchase_orders').select('id', head).eq('project_id', projectId),
+    supabase.from('invoices').select('id', head).eq('project_id', projectId),
+    supabase.from('expenses').select('id', head).eq('project_id', projectId),
+    supabase.from('subcontract_agreements').select('id', head).eq('project_id', projectId),
+  ])
+  return [
+    { label: 'ใบขอซื้อ', count: pr.count ?? 0 },
+    { label: 'ใบสั่งซื้อ', count: po.count ?? 0 },
+    { label: 'ใบแจ้งหนี้', count: invoice.count ?? 0 },
+    { label: 'ค่าใช้จ่าย', count: expense.count ?? 0 },
+    { label: 'สัญญาผู้รับเหมาช่วง', count: agreement.count ?? 0 },
+  ].filter(x => x.count > 0)
+}
+
+export async function getProjectDeleteBlockers(projectId: string): Promise<ActionResult<ProjectDeleteBlocker[]>> {
+  await requireRole(['management', 'admin'])
+  return { ok: true, data: await countProjectDocuments(projectId) }
+}
+
+// ลบโครงการถาวร พร้อม BOQ ทุกเวอร์ชันและรายชื่อสมาชิก
+// ปฏิเสธถ้ามีเอกสารต้นทุนผูกอยู่ และบังคับให้พิมพ์รหัสโครงการยืนยัน เพราะย้อนกลับไม่ได้
+export async function deleteProject(projectId: string, confirmCode: string): Promise<ActionResult> {
+  await requireRole(['management', 'admin'])
+  const supabase = await createClient()
+
+  const { data: project } = await supabase.from('projects').select('id, code, name').eq('id', projectId).maybeSingle()
+  if (!project) return fail('ไม่พบโครงการนี้')
+  if (confirmCode.trim() !== project.code) return fail(`กรุณาพิมพ์รหัสโครงการ ${project.code} ให้ตรงเพื่อยืนยัน`)
+
+  const blockers = await countProjectDocuments(projectId)
+  if (blockers.length > 0) {
+    const detail = blockers.map(b => `${b.label} ${b.count} รายการ`).join(' · ')
+    return fail(
+      `ลบไม่ได้ โครงการนี้มีเอกสารต้นทุนผูกอยู่แล้ว (${detail}) ` +
+        'เอกสารเหล่านี้เป็นบันทึกทางการเงินที่มีประวัติการแก้ไขผูกอยู่ ถ้าต้องการเลิกใช้โครงการ ให้เปลี่ยนสถานะเป็นปิดแทนการลบ'
+    )
+  }
+
+  const { error } = await supabase.from('projects').delete().eq('id', projectId)
+  if (error) return fail(error)
+
+  revalidatePath('/projects')
+  revalidatePath('/')
+  return { ok: true, data: undefined }
+}

@@ -310,6 +310,60 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     await runAs(client, engA, q => q(`update public.profiles set full_name = 'วิศวกร A2' where id = $1`, [engA]))
   })
 
+  it('ยกเลิกการยืนยัน BOQ ได้เมื่อโครงการยังไม่มีเอกสารต้นทุน แล้วกลับมาแก้ตัวเลขได้', async () => {
+    const vB = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectB])).rows[0].id
+    const itemB = (await client.query(`select id from public.boq_items where boq_version_id = $1 and not is_off_boq`, [vB])).rows[0].id
+
+    // ตอนยืนยันแล้วแก้ไม่ได้
+    await expect(runAs(client, mgmt, q => q(`update public.boq_items set qty = 2 where id = $1`, [itemB]))).rejects.toThrow(/ยืนยันแล้ว/)
+    // วิศวกรยกเลิกการยืนยันไม่ได้
+    await expect(runAs(client, engB, q => q(`select public.unconfirm_boq_version($1)`, [vB]))).rejects.toThrow(/ฝ่ายบริหาร/)
+
+    await runAs(client, mgmt, q => q(`select public.unconfirm_boq_version($1)`, [vB]))
+    const after = (await client.query(`select status, confirmed_by, confirmed_at from public.boq_versions where id = $1`, [vB])).rows[0]
+    expect(after.status).toBe('draft')
+    expect(after.confirmed_by).toBeNull()
+    expect(after.confirmed_at).toBeNull()
+    // โครงการไม่เหลือ BOQ ที่ยืนยัน จึงกลับไปเป็นร่าง
+    expect((await client.query(`select status from public.projects where id = $1`, [projectB])).rows[0].status).toBe('draft')
+
+    // แก้ตัวเลขได้แล้ว และยืนยันใหม่ได้
+    await runAs(client, mgmt, q => q(`update public.boq_items set qty = 2 where id = $1`, [itemB]))
+    await runAs(client, mgmt, q => q(`select public.confirm_boq_version($1)`, [vB]))
+    expect((await client.query(`select status from public.projects where id = $1`, [projectB])).rows[0].status).toBe('active')
+  })
+
+  it('ยกเลิกการยืนยันไม่ได้ถ้าโครงการมีเอกสารต้นทุนแล้ว', async () => {
+    const vA = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectA])).rows[0].id
+    expect(await client.query(`select public.project_has_cost_documents($1) as x`, [projectA]).then(r => r.rows[0].x)).toBe(true)
+    await expect(runAs(client, mgmt, q => q(`select public.unconfirm_boq_version($1)`, [vA]))).rejects.toThrow(/เอกสารต้นทุน/)
+  })
+
+  it('ลบโครงการ: วิศวกรทำไม่ได้ และโครงการที่มีเอกสารต้นทุนลบไม่ได้แม้เป็นฝ่ายบริหาร', async () => {
+    const byEng = await runAs(client, engB, async q => (await q(`delete from public.projects where id = $1`, [projectB])).rowCount ?? 0)
+    expect(byEng).toBe(0)
+    expect((await client.query(`select count(*)::int as c from public.projects where id = $1`, [projectB])).rows[0].c).toBe(1)
+
+    // โครงการ A มีใบขอซื้อและใบแจ้งหนี้ผูกอยู่ foreign key จึงปฏิเสธ
+    await expect(runAs(client, mgmt, q => q(`delete from public.projects where id = $1`, [projectA]))).rejects.toThrow()
+    expect((await client.query(`select count(*)::int as c from public.projects where id = $1`, [projectA])).rows[0].c).toBe(1)
+  })
+
+  it('ฝ่ายบริหารลบโครงการที่ยังไม่มีเอกสารต้นทุนได้ พร้อม BOQ และสมาชิก', async () => {
+    const before = (await client.query(`select count(*)::int as c from public.boq_versions where project_id = $1`, [projectB])).rows[0].c
+    expect(before).toBeGreaterThan(0)
+
+    await runAs(client, mgmt, q => q(`delete from public.projects where id = $1`, [projectB]))
+
+    expect((await client.query(`select count(*)::int as c from public.projects where id = $1`, [projectB])).rows[0].c).toBe(0)
+    expect((await client.query(`select count(*)::int as c from public.boq_versions where project_id = $1`, [projectB])).rows[0].c).toBe(0)
+    expect((await client.query(`select count(*)::int as c from public.project_members where project_id = $1`, [projectB])).rows[0].c).toBe(0)
+    // การลบถูกบันทึกใน audit log
+    const log = (await client.query(`select action, old_value from public.audit_logs where table_name = 'projects' and record_id = $1 and action = 'DELETE'`, [projectB])).rows
+    expect(log).toHaveLength(1)
+    expect((log[0].old_value as { code: string }).code).toBe('B')
+  })
+
   it('notifications: อ่านได้เฉพาะของตัวเอง และ insert ผ่าน authenticated ไม่ได้', async () => {
     await client.query(`insert into public.notifications (user_id, event, title) values ($1, 'pr_pending', 'ทดสอบ'), ($2, 'pr_pending', 'ของคนอื่น')`, [engA, engB])
     const mine = await runAs(client, engA, async q => (await q(`select title from public.notifications`)).rows.map(r => r.title))
