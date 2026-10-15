@@ -16,7 +16,7 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
       : { data: [] }
   const versionIds = (summaries ?? []).map(s => s.confirmed_version_id as string)
   const { data: items } = versionIds.length
-    ? await supabase.from('boq_items').select('id, boq_version_id, item_no, description, unit, is_off_boq').in('boq_version_id', versionIds).order('sort_order')
+    ? await supabase.from('boq_items').select('id, boq_version_id, item_no, description, unit, is_off_boq').in('boq_version_id', versionIds).gte('qty', 0).order('sort_order')
     : { data: [] }
 
   const projects = (summaries ?? []).map(s => ({

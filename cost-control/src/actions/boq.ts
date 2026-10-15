@@ -29,6 +29,7 @@ export interface UploadPreviewSheet {
   cost_total: number
   suggested: boolean
   deduction_headings: string[]
+  deduction_items: number
   markup_column_rejected: boolean
 }
 
@@ -130,6 +131,7 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
       cost_total: Math.round(cost * 100) / 100,
       suggested,
       deduction_headings: split.deduction_headings,
+      deduction_items: split.deduction_items,
       markup_column_rejected: split.markup_column_rejected,
     }
   })
