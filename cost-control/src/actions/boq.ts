@@ -3,8 +3,10 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireUser } from '@/lib/auth'
-import { parseWorkbook } from '@/lib/boq/parse'
+import { readSheets, detectLayout, buildPreview } from '@/lib/boq/parse'
 import { autoDetectMapping, splitRows, type ColumnMapping } from '@/lib/boq/split'
+import { analyzeSheet, analysisEnabled } from '@/lib/boq/analyze'
+import { readStoredTemplate, type SheetLayout } from '@/lib/boq/layout'
 import { safeObjectName } from '@/lib/storage'
 import type { BoqVersionType } from '@/lib/types'
 import { fail, type ActionResult } from './types'
@@ -16,7 +18,11 @@ export interface UploadPreviewSheet {
   row_count: number
   header_rows: number
   mapping: ColumnMapping
-  mapping_from_template: boolean
+  layout: SheetLayout
+  // ที่มาของการจับคู่คอลัมน์: template ที่เคยบันทึก, Claude อ่านให้, หรือกฎตายตัวเป็นทางสำรอง
+  mapping_source: 'template' | 'ai' | 'rules'
+  ai_confidence: 'high' | 'medium' | 'low' | null
+  ai_warnings: string[]
   // ผลลองแตกรายการทั้งชีตด้วย mapping ที่เสนอ ใช้ตัดสินว่าชีตนี้ควรนำเข้าหรือไม่
   item_count: number
   section_count: number
@@ -41,13 +47,14 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
   if (!file.name.toLowerCase().endsWith('.xlsx')) return fail('รองรับเฉพาะไฟล์ .xlsx')
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  let sheets
+  let raw
   try {
-    sheets = await parseWorkbook(buffer)
+    raw = await readSheets(buffer)
   } catch {
     return fail('อ่านไฟล์ไม่ได้ ตรวจสอบว่าเป็นไฟล์ .xlsx ที่ถูกต้อง')
   }
-  if (sheets.length === 0) return fail('ไม่พบข้อมูลในไฟล์')
+  raw = raw.filter(s => s.grid.some(r => r.some(c => c !== null && c !== '')))
+  if (raw.length === 0) return fail('ไม่พบข้อมูลในไฟล์')
 
   // ชื่อไฟล์ใน Storage ต้องเป็น ASCII ชื่อเดิม (เช่น ภาษาไทย) เก็บไว้ในคอลัมน์ source_file_name
   const path = `projects/${projectId}/boq/${safeObjectName(file.name, 'xlsx')}`
@@ -60,46 +67,81 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
   const { data: templates } = await supabase
     .from('boq_import_templates')
     .select('sheet_name, mapping')
-    .in('sheet_name', sheets.map(s => s.name))
-  const templateMap = new Map((templates ?? []).map(t => [t.sheet_name, t.mapping as ColumnMapping]))
-
-  return {
-    ok: true,
-    data: {
-      file_path: path,
-      file_name: file.name,
-      sheets: sheets.map(s => {
-        const tpl = templateMap.get(s.name)
-        const mapping = tpl ?? autoDetectMapping(s.headers)
-        const split = splitRows(s.rows, mapping, 0)
-        const cost = split.items.reduce((sum, i) => sum + i.qty * i.unit_cost, 0)
-        // ชีตที่มีคอลัมน์ราคาวัสดุหรือค่าแรงคือชีต BOQ จริง
-        // ส่วนชีตปกและใบเสนอราคามีแต่ยอดรวม ถ้านำเข้าด้วยจะนับต้นทุนซ้ำ
-        const hasPriceColumns = mapping.material_price != null || mapping.labor_price != null
-        return {
-          name: s.name,
-          headers: s.headers.map(h => (h === null || h === undefined ? '' : String(h))),
-          preview: s.preview,
-          row_count: s.rows.length,
-          header_rows: s.header_rows,
-          mapping,
-          mapping_from_template: !!tpl,
-          item_count: split.items.length,
-          section_count: split.sections.length,
-          cost_total: Math.round(cost * 100) / 100,
-          suggested: split.items.length > 0 && hasPriceColumns,
-          deduction_headings: split.deduction_headings,
-          markup_column_rejected: split.markup_column_rejected,
-        }
-      }),
-    },
+    .in('sheet_name', raw.map(s => s.name))
+  const templateMap = new Map<string, NonNullable<ReturnType<typeof readStoredTemplate>>>()
+  for (const t of templates ?? []) {
+    const parsed = readStoredTemplate(t.mapping)
+    if (parsed) templateMap.set(t.sheet_name, parsed)
   }
+
+  // ชีตที่เคยนำเข้ามาก่อนใช้ template เดิม ชีตใหม่ให้ Claude อ่านโครงให้ (ขนานกัน)
+  // ถ้าไม่ได้ตั้ง ANTHROPIC_API_KEY หรือเรียกไม่สำเร็จ ตกไปใช้กฎตายตัวเหมือนเดิม
+  const ANALYZE_LIMIT = 8
+  const analyses = await Promise.all(
+    raw.map(async (sheet, idx) => {
+      if (templateMap.has(sheet.name)) return null
+      if (!analysisEnabled() || idx >= ANALYZE_LIMIT) return null
+      return analyzeSheet(sheet.name, sheet.grid)
+    })
+  )
+
+  const sheets: UploadPreviewSheet[] = raw.map((sheet, idx) => {
+    const tpl = templateMap.get(sheet.name) ?? null
+    const ai = analyses[idx]
+
+    let layout: SheetLayout
+    let mapping: ColumnMapping
+    let source: UploadPreviewSheet['mapping_source']
+    if (tpl) {
+      layout = tpl.layout ?? detectLayout(sheet.grid)
+      mapping = tpl.columns as ColumnMapping
+      source = 'template'
+    } else if (ai) {
+      layout = ai.layout
+      mapping = ai.mapping
+      source = 'ai'
+    } else {
+      layout = detectLayout(sheet.grid)
+      mapping = autoDetectMapping(buildPreview(sheet.name, sheet.grid, layout).headers)
+      source = 'rules'
+    }
+
+    const preview = buildPreview(sheet.name, sheet.grid, layout)
+    const split = splitRows(preview.rows, mapping, 0)
+    const cost = split.items.reduce((sum, i) => sum + i.qty * i.unit_cost, 0)
+    // ชีตที่มีคอลัมน์ราคาวัสดุหรือค่าแรงคือชีต BOQ จริง
+    // ส่วนชีตปกและใบเสนอราคามีแต่ยอดรวม ถ้านำเข้าด้วยจะนับต้นทุนซ้ำ
+    const hasPriceColumns = mapping.material_price != null || mapping.labor_price != null
+    const suggested = ai ? ai.is_boq_detail_sheet && split.items.length > 0 : split.items.length > 0 && hasPriceColumns
+
+    return {
+      name: sheet.name,
+      headers: preview.headers.map(h => (h === null || h === undefined ? '' : String(h))),
+      preview: preview.preview,
+      row_count: preview.rows.length,
+      header_rows: preview.header_rows,
+      mapping,
+      layout,
+      mapping_source: source,
+      ai_confidence: ai?.confidence ?? null,
+      ai_warnings: ai?.warnings ?? [],
+      item_count: split.items.length,
+      section_count: split.sections.length,
+      cost_total: Math.round(cost * 100) / 100,
+      suggested,
+      deduction_headings: split.deduction_headings,
+      markup_column_rejected: split.markup_column_rejected,
+    }
+  })
+
+  return { ok: true, data: { file_path: path, file_name: file.name, sheets } }
   void user
 }
 
 export interface ImportSheetInput {
   name: string
   mapping: ColumnMapping
+  layout: SheetLayout
   include: boolean
 }
 
@@ -118,7 +160,7 @@ export async function importBoq(
 
   const { data: fileData, error: dlErr } = await supabase.storage.from('project-files').download(filePath)
   if (dlErr || !fileData) return fail('ไม่พบไฟล์ที่อัปโหลด กรุณาอัปโหลดใหม่')
-  const parsed = await parseWorkbook(Buffer.from(await fileData.arrayBuffer()))
+  const rawSheets = await readSheets(Buffer.from(await fileData.arrayBuffer()))
 
   const { data: existing } = await supabase
     .from('boq_versions')
@@ -150,8 +192,9 @@ export async function importBoq(
   let totalItems = 0
   for (const sheetInput of sheets) {
     if (!sheetInput.include) continue
-    const sheet = parsed.find(s => s.name === sheetInput.name)
-    if (!sheet) continue
+    const rawSheet = rawSheets.find(s => s.name === sheetInput.name)
+    if (!rawSheet) continue
+    const sheet = buildPreview(rawSheet.name, rawSheet.grid, sheetInput.layout ?? detectLayout(rawSheet.grid))
     const result = splitRows(sheet.rows, sheetInput.mapping, defaultMarkupPct)
     if (result.items.length === 0) continue
 
@@ -187,7 +230,14 @@ export async function importBoq(
     // บันทึก template ตามชื่อชีต ครั้งถัดไปนำเข้าอัตโนมัติ
     await supabase
       .from('boq_import_templates')
-      .upsert({ sheet_name: sheetInput.name, mapping: sheetInput.mapping, created_by: user.id }, { onConflict: 'sheet_name' })
+      .upsert(
+        {
+          sheet_name: sheetInput.name,
+          mapping: { columns: sheetInput.mapping, layout: sheetInput.layout },
+          created_by: user.id,
+        },
+        { onConflict: 'sheet_name' }
+      )
   }
 
   if (totalItems === 0 && type !== 'variation_order') {
