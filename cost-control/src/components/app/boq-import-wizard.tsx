@@ -200,6 +200,12 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                 </table>
               </div>
               <p className="text-xs text-muted-foreground">แสดงตัวอย่าง 20 แถวแรก</p>
+              {sheet.markup_column_rejected && include[sheet.name] && (
+                <Alert tone="warning">
+                  ชีตนี้มีคอลัมน์ที่ชื่อคล้ายเปอร์เซ็นต์กำไร แต่ค่าข้างในไม่ใช่เปอร์เซ็นต์ (เช่นคอลัมน์ราคาที่มี % อยู่ในชื่อ)
+                  ระบบจึงไม่ใช้คอลัมน์นั้น และใช้ค่า markup เริ่มต้นที่กรอกไว้ด้านบนแทนทุกรายการ
+                </Alert>
+              )}
               {sheet.deduction_headings.length > 0 && include[sheet.name] && (
                 <Alert tone="warning">
                   พบหัวข้อที่เป็นงานลด: {sheet.deduction_headings.join(' / ')} ระบบนำเข้าเป็นต้นทุนบวกตามตัวเลขในไฟล์

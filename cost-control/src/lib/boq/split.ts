@@ -52,6 +52,8 @@ export interface SplitResult {
   sections: ParsedSection[]
   items: ParsedItem[]
   skipped: number
+  // true เมื่อคอลัมน์ markup ที่จับได้มีค่าที่เป็นไปไม่ได้ ระบบจึงทิ้งคอลัมน์นั้นและใช้ค่าเริ่มต้นแทน
+  markup_column_rejected: boolean
   // หัวข้อที่ดูเหมือนเป็นงานลด (VO) ระบบนำเข้าเป็นต้นทุนบวกตามไฟล์ ต้องให้ผู้ใช้ตัดสินใจเอง
   deduction_headings: string[]
 }
@@ -98,7 +100,7 @@ const HEADER_PATTERNS: { key: BoqColumnKey; re: RegExp; not?: RegExp }[] = [
   { key: 'qty', re: /(ปริมาณ|จำนวน|qty|quantity)/, not: /(เงิน|amount|บาท)/ },
   { key: 'material_price', re: /(วัสดุ|material)/, not: /(รวม|total|amount|subtotal)/ },
   { key: 'labor_price', re: /(ค่าแรง|แรงงาน|labou?r)/, not: /(รวม|total|amount|subtotal)/ },
-  { key: 'markup_pct', re: /(markup|กำไร|%)/ },
+  { key: 'markup_pct', re: /(markup|กำไร|profit|^%$)/, not: /(ราคา|price|บาท|baht|รวม|total|amount|จำนวน|unit)/ },
   { key: 'total', re: /(รวม|total|amount|จำนวนเงิน)/, not: /(วัสดุ|material|ค่าแรง|แรงงาน|labou?r|unitrate)/ },
 ]
 
@@ -174,7 +176,12 @@ function pick(row: unknown[], idx: number | null | undefined): unknown {
 // แถวสรุปยอดที่ต้องข้าม ไม่ใช่รายการงาน
 const TOTAL_ROW_RE = /^(sub\s*total|subtotal|total|grand\s*total|overhead|รวมทั้งสิ้น|ยอดรวม|รวมเป็นเงิน|รวม)/i
 const NOTE_ROW_RE = /^(หมายเหตุ|remark|note)/i
+// บรรทัดที่เป็นวันที่ล้วน เช่น 6-10-69 ไม่ใช่หัวข้อหมวด
+const DATE_ONLY_RE = /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\.?$/
 // หัวข้อที่บอกว่าเป็นงานลดใน VO เช่น "หมวดงานสถาปัตย์ (ตามสัญญาเดิม) งานลด"
+// กำไรในงานก่อสร้างของ S-2000 อยู่ราว 8 ถึง 12 เปอร์เซ็นต์ ตั้งเพดานไว้กว้างกว่านั้นมาก
+const MAX_PLAUSIBLE_MARKUP_PCT = 200
+
 const DEDUCTION_RE = /(งานลด|ลดงาน|\(ลด\)|รายการลด|deduct|omit)/i
 
 export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMarkupPct = 0): SplitResult {
@@ -190,6 +197,21 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
   let lastParent: string | null = null
   let inSummary = false
   const deductions = new Set<string>()
+
+  // ตรวจคอลัมน์ markup ก่อนใช้งาน ถ้าค่าออกนอกช่วงที่เป็นไปได้ของเปอร์เซ็นต์กำไร
+  // แปลว่าจับคอลัมน์ผิด (เช่นไปจับคอลัมน์ราคาที่มี % ในชื่อ) ให้ทิ้งทั้งคอลัมน์แล้วใช้ค่าเริ่มต้น
+  // ปล่อยไว้จะทำให้กำไรคาดหวังของทั้งโครงการเพี้ยนเป็นหลักพันเปอร์เซ็นต์โดยไม่มีใครทันสังเกต
+  let markupIdx = mapping.markup_pct ?? null
+  let markupColumnRejected = false
+  if (markupIdx !== null) {
+    const values = rows
+      .map(r => cellNumber(r[markupIdx as number]))
+      .filter((n): n is number => n !== null)
+    if (values.some(n => n < -100 || n > MAX_PLAUSIBLE_MARKUP_PCT)) {
+      markupIdx = null
+      markupColumnRejected = true
+    }
+  }
 
   for (const row of rows) {
     const description = cellText(pick(row, mapping.description))
@@ -214,7 +236,10 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
       skipped++
       continue
     }
-    if (!itemNo && (TOTAL_ROW_RE.test(description) || NOTE_ROW_RE.test(description))) {
+    if (
+      !itemNo &&
+      (TOTAL_ROW_RE.test(description) || NOTE_ROW_RE.test(description) || DATE_ONLY_RE.test(description))
+    ) {
       skipped++
       continue
     }
@@ -231,7 +256,7 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
     const material = cellNumber(materialCell)
     const labor = cellNumber(laborCell)
     const total = cellNumber(pick(row, mapping.total))
-    const markup = cellNumber(pick(row, mapping.markup_pct)) ?? defaultMarkupPct
+    const markup = cellNumber(pick(row, markupIdx)) ?? defaultMarkupPct
     const unit = cellText(pick(row, mapping.unit)) || null
 
     // ถ้าชีตมีคอลัมน์ราคาต่อหน่วย แต่แถวนี้ว่างทั้งสองช่อง แปลว่าเป็นแถวสรุปยอด ไม่ใช่รายการ
@@ -284,7 +309,7 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
       push('material', 0)
     }
   }
-  return { sections, items, skipped, deduction_headings: [...deductions] }
+  return { sections, items, skipped, markup_column_rejected: markupColumnRejected, deduction_headings: [...deductions] }
 }
 
 export interface SectionTotals {
