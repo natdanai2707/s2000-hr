@@ -11,6 +11,7 @@ import { formatThaiDate, formatThaiDateTime } from '@/lib/date'
 import { BoqCostTable } from '@/components/app/boq-cost-table'
 import { MembersPanel } from '@/components/app/members-panel'
 import { statusTone } from '@/components/app/project-card'
+import { DeleteProjectButton } from '@/components/app/delete-project-button'
 import { cn } from '@/lib/utils'
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -57,6 +58,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/boq/import`}>นำเข้า BOQ</Link></Button>}
             <Button asChild variant="outline"><Link href={`/pr/new?project=${id}`}>ขอซื้อ</Link></Button>
             <Button asChild variant="outline"><Link href={`/expenses/new?project=${id}`}>บันทึกค่าใช้จ่าย</Link></Button>
+            {(user.profile.role === 'management' || user.profile.role === 'admin') && (
+              <DeleteProjectButton projectId={id} projectCode={s.code} />
+            )}
           </>
         }
       />

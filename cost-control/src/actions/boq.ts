@@ -259,6 +259,27 @@ export async function confirmBoqVersion(versionId: string, projectId: string): P
   return { ok: true, data: undefined }
 }
 
+export async function unconfirmBoqVersion(versionId: string, projectId: string): Promise<ActionResult> {
+  await requireUser()
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('unconfirm_boq_version', { p_version_id: versionId })
+  if (error) return fail(error)
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath(`/projects/${projectId}/boq/${versionId}`)
+  revalidatePath('/')
+  return { ok: true, data: undefined }
+}
+
+export async function deleteBoqVersion(versionId: string, projectId: string): Promise<ActionResult> {
+  await requireUser()
+  const supabase = await createClient()
+  const { error } = await supabase.from('boq_versions').delete().eq('id', versionId)
+  if (error) return fail(error)
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/')
+  return { ok: true, data: undefined }
+}
+
 export async function createVariationOrder(projectId: string, note: string): Promise<ActionResult<{ version_id: string }>> {
   await requireUser()
   const supabase = await createClient()

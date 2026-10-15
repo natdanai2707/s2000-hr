@@ -58,6 +58,8 @@ export default async function BoqVersionPage({ params }: { params: Promise<{ id:
             versionId={versionId}
             status={version.status}
             canConfirm={isManagement && version.status === 'draft'}
+            canUnconfirm={isManagement && version.status === 'confirmed'}
+            canDelete={isManagement || user.profile.role === 'admin'}
             canCreateVo={version.status === 'confirmed' && (isManagement || canEditRole(user.profile.role))}
             hasItems={(items?.length ?? 0) > 0}
           />
