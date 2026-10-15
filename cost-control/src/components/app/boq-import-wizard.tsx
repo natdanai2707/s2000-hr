@@ -3,7 +3,8 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { uploadBoqPreview, importBoq, type UploadPreviewResult } from '@/actions/boq'
-import { BOQ_COLUMN_LABELS, splitRows, type BoqColumnKey, type ColumnMapping } from '@/lib/boq/split'
+import { BOQ_COLUMN_LABELS, type BoqColumnKey, type ColumnMapping } from '@/lib/boq/split'
+import { formatBaht } from '@/lib/format'
 import type { BoqVersionType } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +23,7 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
   const [preview, setPreview] = useState<UploadPreviewResult | null>(null)
   const [mappings, setMappings] = useState<Record<string, ColumnMapping>>({})
   const [include, setInclude] = useState<Record<string, boolean>>({})
+  const [edited, setEdited] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
@@ -41,25 +43,29 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
     const inc: Record<string, boolean> = {}
     for (const s of res.data.sheets) {
       m[s.name] = s.mapping
-      inc[s.name] = true
+      inc[s.name] = s.suggested
     }
     setMappings(m)
     setInclude(inc)
+    setEdited({})
   }
 
-  // สรุปล่วงหน้าจาก 20 แถวตัวอย่างและ mapping ปัจจุบัน (ตัวเลขจริงคำนวณหลังนำเข้า)
+  // ตัวเลขรวมของชีตที่เลือก คำนวณจากทั้งชีตฝั่งเซิร์ฟเวอร์ตอนอัปโหลด
   const previewSummary = useMemo(() => {
     if (!preview) return null
     let items = 0
     let sections = 0
+    let cost = 0
+    let stale = false
     for (const s of preview.sheets) {
       if (!include[s.name]) continue
-      const r = splitRows(s.preview, mappings[s.name] ?? {}, Number(markup) || 0)
-      items += r.items.length
-      sections += r.sections.length
+      if (edited[s.name]) stale = true
+      items += s.item_count
+      sections += s.section_count
+      cost += s.cost_total
     }
-    return { items, sections }
-  }, [preview, mappings, include, markup])
+    return { items, sections, cost, stale }
+  }, [preview, include, edited])
 
   async function onImport() {
     if (!preview) return
@@ -125,8 +131,24 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                 <div>
                   <div className="font-semibold">ชีต {sheet.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {sheet.row_count} แถว · {sheet.mapping_from_template ? 'ใช้ template ที่บันทึกไว้' : 'ตรวจจับคอลัมน์อัตโนมัติ กรุณาตรวจสอบ'}
+                    {sheet.row_count} แถว · หัวตาราง {sheet.header_rows} แถว ·{' '}
+                    {sheet.mapping_from_template ? 'ใช้ template ที่บันทึกไว้' : 'ตรวจจับคอลัมน์อัตโนมัติ กรุณาตรวจสอบ'}
                   </div>
+                  <div className="text-xs mt-0.5">
+                    {sheet.item_count > 0 ? (
+                      <span className="text-foreground">
+                        แตกได้ {sheet.section_count} หมวด {sheet.item_count} รายการ ต้นทุนรวม {formatBaht(sheet.cost_total)} บาท
+                        {edited[sheet.name] && <span className="text-muted-foreground"> (คำนวณใหม่หลังนำเข้า)</span>}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">ไม่พบรายการที่นำเข้าได้จากชีตนี้</span>
+                    )}
+                  </div>
+                  {!sheet.suggested && sheet.item_count > 0 && (
+                    <div className="text-xs text-warning-fg mt-0.5">
+                      ชีตนี้ไม่มีคอลัมน์ราคาวัสดุหรือค่าแรง อาจเป็นใบเสนอราคา ถ้านำเข้าพร้อมชีต BOQ จะนับต้นทุนซ้ำ
+                    </div>
+                  )}
                 </div>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" className="w-4 h-4" checked={include[sheet.name] ?? false} onChange={e => setInclude(v => ({ ...v, [sheet.name]: e.target.checked }))} />
@@ -141,9 +163,10 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                     <Select
                       className="h-9 text-sm"
                       value={mappings[sheet.name]?.[key] ?? ''}
-                      onChange={e =>
+                      onChange={e => {
                         setMappings(m => ({ ...m, [sheet.name]: { ...m[sheet.name], [key]: e.target.value === '' ? null : Number(e.target.value) } }))
-                      }
+                        setEdited(v => ({ ...v, [sheet.name]: true }))
+                      }}
                     >
                       <option value="">ไม่มี</option>
                       {sheet.headers.map((h, idx) => (
@@ -177,12 +200,21 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                 </table>
               </div>
               <p className="text-xs text-muted-foreground">แสดงตัวอย่าง 20 แถวแรก</p>
+              {sheet.deduction_headings.length > 0 && include[sheet.name] && (
+                <Alert tone="warning">
+                  พบหัวข้อที่เป็นงานลด: {sheet.deduction_headings.join(' / ')} ระบบนำเข้าเป็นต้นทุนบวกตามตัวเลขในไฟล์
+                  ถ้าเป็นการลดงานจากสัญญาเดิม ให้แก้ปริมาณของรายการเดิมในเวอร์ชัน VO แทนการนำเข้าเป็นรายการใหม่
+                </Alert>
+              )}
             </div>
           ))}
 
           <div className="rounded-xl border border-border bg-card p-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm text-muted-foreground">
-              จากตัวอย่าง: {previewSummary?.sections ?? 0} หมวด {previewSummary?.items ?? 0} รายการ (ตัวเลขเต็มแสดงหลังนำเข้า)
+            <div className="text-sm">
+              <span className="text-muted-foreground">รวมที่จะนำเข้า </span>
+              {previewSummary?.sections ?? 0} หมวด {previewSummary?.items ?? 0} รายการ ต้นทุนรวม{' '}
+              {formatBaht(previewSummary?.cost ?? 0)} บาท
+              {previewSummary?.stale && <span className="text-muted-foreground"> (ยังไม่รวมการจับคู่คอลัมน์ที่เพิ่งแก้)</span>}
             </div>
             <Button onClick={onImport} disabled={pending || !allMapped}>{pending ? 'กำลังนำเข้า' : 'นำเข้า BOQ'}</Button>
           </div>

@@ -14,8 +14,15 @@ export interface UploadPreviewSheet {
   headers: string[]
   preview: unknown[][]
   row_count: number
+  header_rows: number
   mapping: ColumnMapping
   mapping_from_template: boolean
+  // ผลลองแตกรายการทั้งชีตด้วย mapping ที่เสนอ ใช้ตัดสินว่าชีตนี้ควรนำเข้าหรือไม่
+  item_count: number
+  section_count: number
+  cost_total: number
+  suggested: boolean
+  deduction_headings: string[]
 }
 
 export interface UploadPreviewResult {
@@ -62,13 +69,25 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
       file_name: file.name,
       sheets: sheets.map(s => {
         const tpl = templateMap.get(s.name)
+        const mapping = tpl ?? autoDetectMapping(s.headers)
+        const split = splitRows(s.rows, mapping, 0)
+        const cost = split.items.reduce((sum, i) => sum + i.qty * i.unit_cost, 0)
+        // ชีตที่มีคอลัมน์ราคาวัสดุหรือค่าแรงคือชีต BOQ จริง
+        // ส่วนชีตปกและใบเสนอราคามีแต่ยอดรวม ถ้านำเข้าด้วยจะนับต้นทุนซ้ำ
+        const hasPriceColumns = mapping.material_price != null || mapping.labor_price != null
         return {
           name: s.name,
           headers: s.headers.map(h => (h === null || h === undefined ? '' : String(h))),
           preview: s.preview,
           row_count: s.rows.length,
-          mapping: tpl ?? autoDetectMapping(s.headers),
+          header_rows: s.header_rows,
+          mapping,
           mapping_from_template: !!tpl,
+          item_count: split.items.length,
+          section_count: split.sections.length,
+          cost_total: Math.round(cost * 100) / 100,
+          suggested: split.items.length > 0 && hasPriceColumns,
+          deduction_headings: split.deduction_headings,
         }
       }),
     },
