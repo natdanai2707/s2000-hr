@@ -4,6 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader } from '@/components/app/common'
 import { BoqImportWizard } from '@/components/app/boq-import-wizard'
 
+// การอ่านโครงไฟล์ด้วย Claude ใช้เวลาต่อชีต จึงขยายเวลาสูงสุดของฟังก์ชันนี้
+export const maxDuration = 300
+
 export default async function BoqImportPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ type?: string }> }) {
   const { id } = await params
   const { type } = await searchParams

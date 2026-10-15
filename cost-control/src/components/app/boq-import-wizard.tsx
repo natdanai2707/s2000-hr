@@ -76,7 +76,12 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
       preview.file_path,
       preview.file_name,
       type,
-      preview.sheets.map(s => ({ name: s.name, mapping: mappings[s.name] ?? {}, include: include[s.name] ?? false })),
+      preview.sheets.map(s => ({
+        name: s.name,
+        mapping: mappings[s.name] ?? {},
+        layout: s.layout,
+        include: include[s.name] ?? false,
+      })),
       Number(markup) || 0,
       note
     )
@@ -131,8 +136,12 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                 <div>
                   <div className="font-semibold">ชีต {sheet.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {sheet.row_count} แถว · หัวตาราง {sheet.header_rows} แถว ·{' '}
-                    {sheet.mapping_from_template ? 'ใช้ template ที่บันทึกไว้' : 'ตรวจจับคอลัมน์อัตโนมัติ กรุณาตรวจสอบ'}
+                    {sheet.row_count} แถว · หัวตาราง {sheet.header_rows} แถว · ข้อมูลเริ่มแถว {sheet.layout.data_start_row} ·{' '}
+                    {sheet.mapping_source === 'template'
+                      ? 'ใช้รูปแบบที่บันทึกไว้จากการนำเข้าครั้งก่อน'
+                      : sheet.mapping_source === 'ai'
+                        ? `Claude อ่านโครงให้ ความมั่นใจ ${confidenceLabel(sheet.ai_confidence)}`
+                        : 'ตรวจจับด้วยกฎพื้นฐาน กรุณาตรวจสอบให้ละเอียด'}
                   </div>
                   <div className="text-xs mt-0.5">
                     {sheet.item_count > 0 ? (
@@ -200,6 +209,17 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                 </table>
               </div>
               <p className="text-xs text-muted-foreground">แสดงตัวอย่าง 20 แถวแรก</p>
+              {sheet.ai_warnings.length > 0 && include[sheet.name] && (
+                <Alert tone="info">
+                  ข้อสังเกตจากการอ่านไฟล์: {sheet.ai_warnings.join(' · ')}
+                </Alert>
+              )}
+              {sheet.mapping_source === 'rules' && include[sheet.name] && (
+                <Alert tone="warning">
+                  ยังไม่ได้ตั้งค่าการอ่านไฟล์ด้วย Claude ระบบจึงเดาคอลัมน์จากชื่อหัวตาราง
+                  ถ้าหัวคอลัมน์ในไฟล์สะกดไม่เหมือนมาตรฐาน อาจจับผิด กรุณาตรวจการจับคู่ด้านบนให้ครบก่อนนำเข้า
+                </Alert>
+              )}
               {sheet.markup_column_rejected && include[sheet.name] && (
                 <Alert tone="warning">
                   ชีตนี้มีคอลัมน์ที่ชื่อคล้ายเปอร์เซ็นต์กำไร แต่ค่าข้างในไม่ใช่เปอร์เซ็นต์ (เช่นคอลัมน์ราคาที่มี % อยู่ในชื่อ)
@@ -230,6 +250,13 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
       <SummaryHint />
     </div>
   )
+}
+
+function confidenceLabel(c: 'high' | 'medium' | 'low' | null): string {
+  if (c === 'high') return 'สูง'
+  if (c === 'medium') return 'ปานกลาง'
+  if (c === 'low') return 'ต่ำ ควรตรวจละเอียด'
+  return '-'
 }
 
 function SummaryHint() {
