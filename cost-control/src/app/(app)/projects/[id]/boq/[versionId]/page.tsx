@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { requireUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader, StatusBadge, Stat } from '@/components/app/common'
+import { Alert } from '@/components/ui/alert'
 import { BOQ_VERSION_TYPE_LABELS, type BoqCategory } from '@/lib/types'
 import { formatBaht, formatPct, toNumber } from '@/lib/format'
 import { formatThaiDateTime } from '@/lib/date'
@@ -78,6 +79,14 @@ export default async function BoqVersionPage({ params }: { params: Promise<{ id:
           <span className="text-muted-foreground">· ไฟล์ต้นทาง {version.source_file_name ?? version.source_file_path.split('/').pop()}</span>
         )}
       </div>
+
+      {version.status === 'draft' && version.type === 'variation_order' && (
+        <Alert tone="info" className="mb-4">
+          นี่คือร่างสำหรับแก้ BOQ แก้ปริมาณของรายการเดิมหรือกดเพิ่มรายการใหม่ได้ตามต้องการ
+          เวอร์ชันที่ใช้งานอยู่ยังไม่เปลี่ยนจนกว่าจะกดยืนยัน BOQ ด้านบน
+          เมื่อยืนยันแล้ว ต้นทุนที่เกิดไปแล้วจะย้ายมาผูกกับรายการในเวอร์ชันนี้ให้อัตโนมัติ ไม่หาย
+        </Alert>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6">
         <Stat label="มูลค่าต้นทุนรวม" value={formatBaht(totalCost)} />

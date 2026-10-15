@@ -310,6 +310,37 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     await runAs(client, engA, q => q(`update public.profiles set full_name = 'วิศวกร A2' where id = $1`, [engA]))
   })
 
+  it('แก้ BOQ ที่ยืนยันแล้วโดยไม่ต้องอัปโหลดไฟล์: เปิดร่างซ้ำได้ร่างเดิม แก้ปริมาณแล้วยืนยัน', async () => {
+    const versionsBefore = (await client.query(`select count(*)::int as c from public.boq_versions where project_id = $1`, [projectA])).rows[0].c
+
+    // กดแก้ไข BOQ สองครั้งต้องได้ร่างเดิม ไม่ใช่ร่างใหม่สองอัน
+    const first = await runAs(client, mgmt, async q => (await q(`select public.create_variation_order($1, null) as id`, [projectA])).rows[0].id as string)
+    const second = await runAs(client, mgmt, async q => (await q(`select public.create_variation_order($1, null) as id`, [projectA])).rows[0].id as string)
+    expect(second).toBe(first)
+    expect((await client.query(`select count(*)::int as c from public.boq_versions where project_id = $1`, [projectA])).rows[0].c).toBe(versionsBefore + 1)
+
+    // เพิ่มปริมาณรายการเดิม และเพิ่มรายการใหม่เข้าไปในร่าง
+    const steelDraft = (await client.query(
+      `select n.id, n.qty from public.boq_items n join public.boq_items o on o.id = n.origin_item_id
+        where n.boq_version_id = $1 and o.description = 'เหล็ก H-Beam'`, [first])).rows[0]
+    await runAs(client, mgmt, async q => {
+      await q(`update public.boq_items set qty = qty + 10 where id = $1`, [steelDraft.id])
+      await q(`insert into public.boq_items (boq_version_id, item_no, description, unit, qty, unit_cost, category, markup_pct, sell_unit_price)
+               values ($1, '9.9', 'ตะแกรงเหล็กเพิ่มหน้างาน', 'แผ่น', 10, 5000, 'material', 10, 5500)`, [first])
+    })
+
+    await runAs(client, mgmt, q => q(`select public.confirm_boq_version($1)`, [first]))
+
+    const s = (await client.query(`select confirmed_version_id, total_budget from public.v_project_summary where project_id = $1`, [projectA])).rows[0]
+    expect(s.confirmed_version_id).toBe(first)
+    // งบเพิ่มตามปริมาณที่แก้ บวกรายการใหม่ และต้นทุนจริงที่เกิดไปแล้วยังผูกกับรายการเดิม
+    const newSteel = (await client.query(`select * from public.v_boq_item_costs where boq_item_id = $1`, [steelDraft.id])).rows[0]
+    expect(n(newSteel.qty)).toBe(n(steelDraft.qty) + 10)
+    expect(n(newSteel.actual)).toBe(28800)
+    const added = (await client.query(`select budget from public.v_boq_item_costs where boq_version_id = $1 and description = 'ตะแกรงเหล็กเพิ่มหน้างาน'`, [first])).rows[0]
+    expect(n(added.budget)).toBe(50000)
+  })
+
   it('ยกเลิกการยืนยัน BOQ ได้เมื่อโครงการยังไม่มีเอกสารต้นทุน แล้วกลับมาแก้ตัวเลขได้', async () => {
     const vB = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectB])).rows[0].id
     const itemB = (await client.query(`select id from public.boq_items where boq_version_id = $1 and not is_off_boq`, [vB])).rows[0].id

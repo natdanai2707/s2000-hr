@@ -30,13 +30,15 @@ export async function createUser(client: Client, email: string, fullName: string
 }
 
 // รัน query ในฐานะผู้ใช้ (role authenticated + jwt sub) ภายใน transaction เดียว
-export async function runAs<T>(client: Client, userId: string, fn: (q: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>) => Promise<T>): Promise<T> {
+type QueryResult = { rows: Record<string, unknown>[]; rowCount: number | null }
+
+export async function runAs<T>(client: Client, userId: string, fn: (q: (sql: string, params?: unknown[]) => Promise<QueryResult>) => Promise<T>): Promise<T> {
   await client.query('begin')
   try {
     await client.query('set local role authenticated')
     await client.query(`select set_config('request.jwt.claim.sub', $1, true)`, [userId])
     await client.query(`select set_config('request.jwt.claim.role', 'authenticated', true)`)
-    const q = (sql: string, params?: unknown[]) => client.query(sql, params as unknown[] | undefined) as Promise<{ rows: Record<string, unknown>[] }>
+    const q = (sql: string, params?: unknown[]) => client.query(sql, params as unknown[] | undefined) as Promise<QueryResult>
     const out = await fn(q)
     await client.query('commit')
     return out

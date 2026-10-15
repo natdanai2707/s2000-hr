@@ -280,6 +280,16 @@ export async function deleteBoqVersion(versionId: string, projectId: string): Pr
   return { ok: true, data: undefined }
 }
 
+// เปิดร่างสำหรับแก้ BOQ ที่ยืนยันแล้ว ถ้ามีร่างค้างอยู่จะใช้อันเดิมต่อ
+export async function startBoqRevision(projectId: string): Promise<ActionResult<{ version_id: string }>> {
+  await requireUser()
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('create_variation_order', { p_project_id: projectId, p_note: null })
+  if (error) return fail(error)
+  revalidatePath(`/projects/${projectId}`)
+  return { ok: true, data: { version_id: data as string } }
+}
+
 export async function createVariationOrder(projectId: string, note: string): Promise<ActionResult<{ version_id: string }>> {
   await requireUser()
   const supabase = await createClient()
