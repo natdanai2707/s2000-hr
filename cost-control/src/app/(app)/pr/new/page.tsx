@@ -24,6 +24,7 @@ export default async function NewPrPage({ searchParams }: { searchParams: Promis
         .from('v_boq_item_costs')
         .select('boq_item_id, project_id, item_no, description, unit, category, is_off_boq, qty, unit_cost, qty_ordered, qty_remaining')
         .in('boq_version_id', versionIds)
+        .gte('qty', 0) // รายการงานลด (ปริมาณติดลบ) ขอซื้อไม่ได้
         .order('item_no')
     : { data: [] }
 

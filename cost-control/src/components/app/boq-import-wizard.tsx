@@ -227,9 +227,10 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                 </Alert>
               )}
               {sheet.deduction_headings.length > 0 && include[sheet.name] && (
-                <Alert tone="warning">
-                  พบหัวข้อที่เป็นงานลด: {sheet.deduction_headings.join(' / ')} ระบบนำเข้าเป็นต้นทุนบวกตามตัวเลขในไฟล์
-                  ถ้าเป็นการลดงานจากสัญญาเดิม ให้แก้ปริมาณของรายการเดิมในเวอร์ชัน VO แทนการนำเข้าเป็นรายการใหม่
+                <Alert tone="info">
+                  พบหัวข้องานลด: {sheet.deduction_headings.join(' / ')} ระบบนำเข้า {sheet.deduction_items} รายการใต้หัวข้อนี้เป็นปริมาณติดลบ
+                  ยอดต้นทุนที่แสดงด้านบนหักงานลดออกแล้ว รายการติดลบใช้ขอซื้อหรือบันทึกค่าใช้จ่ายไม่ได้
+                  ถ้าหัวข้อไหนไม่ใช่งานลดจริง แก้ปริมาณเป็นบวกได้ในหน้าเวอร์ชันก่อนกดยืนยัน
                 </Alert>
               )}
             </div>

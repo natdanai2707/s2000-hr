@@ -341,6 +341,29 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     expect(n(added.budget)).toBe(50000)
   })
 
+  it('งานลดใน VO เป็นรายการติดลบ: หักงบและต้นทุนคาดการณ์ และผูกต้นทุนไม่ได้', async () => {
+    const before = (await client.query(`select total_budget, forecast_profit from public.v_project_summary where project_id = $1`, [projectA])).rows[0]
+    const vo = await runAs(client, mgmt, async q => (await q(`select public.create_variation_order($1, 'ลูกค้าลดงาน') as id`, [projectA])).rows[0].id as string)
+    const deduction = await runAs(client, mgmt, async q =>
+      (await q(`insert into public.boq_items (boq_version_id, item_no, description, unit, qty, unit_cost, category, markup_pct, sell_unit_price)
+                values ($1, 'ลด1', 'เหล็ก H-Beam (งานลด)', 'ตัน', -5, 30000, 'material', 10, 33000) returning id`, [vo])).rows[0].id as string)
+    await runAs(client, mgmt, q => q(`select public.confirm_boq_version($1)`, [vo]))
+
+    const after = (await client.query(`select total_budget, forecast_profit from public.v_project_summary where project_id = $1`, [projectA])).rows[0]
+    expect(n(after.total_budget)).toBe(n(before.total_budget) - 150000)
+    // งานที่ลดแล้วไม่ต้องใช้เงิน ต้นทุนคาดการณ์จึงลดลงเท่ากับงานลด
+    expect(n(after.forecast_profit)).toBe(n(before.forecast_profit) + 150000)
+
+    // ขอซื้อหรือบันทึกค่าใช้จ่ายกับรายการงานลดไม่ได้ แม้เป็นฝ่ายบริหาร
+    await expect(runAs(client, engA, async q => {
+      const id = (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $2) returning id`, [projectA, engA])).rows[0].id
+      await q(`insert into public.purchase_request_items (pr_id, boq_item_id, description, qty, unit, unit_price) values ($1, $2, 'เหล็ก', 1, 'ตัน', 30000)`, [id, deduction])
+    })).rejects.toThrow(/งานลด/)
+    await expect(runAs(client, mgmt, q =>
+      q(`insert into public.expenses (project_id, boq_item_id, expense_date, description, amount, created_by) values ($1, $2, current_date, 'ทดสอบ', 100, $3)`, [projectA, deduction, mgmt])
+    )).rejects.toThrow(/งานลด/)
+  })
+
   it('ยกเลิกการยืนยัน BOQ ได้เมื่อโครงการยังไม่มีเอกสารต้นทุน แล้วกลับมาแก้ตัวเลขได้', async () => {
     const vB = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectB])).rows[0].id
     const itemB = (await client.query(`select id from public.boq_items where boq_version_id = $1 and not is_off_boq`, [vB])).rows[0].id

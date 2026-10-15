@@ -54,8 +54,9 @@ export interface SplitResult {
   skipped: number
   // true เมื่อคอลัมน์ markup ที่จับได้มีค่าที่เป็นไปไม่ได้ ระบบจึงทิ้งคอลัมน์นั้นและใช้ค่าเริ่มต้นแทน
   markup_column_rejected: boolean
-  // หัวข้อที่ดูเหมือนเป็นงานลด (VO) ระบบนำเข้าเป็นต้นทุนบวกตามไฟล์ ต้องให้ผู้ใช้ตัดสินใจเอง
+  // หัวข้องานลด (VO) ที่พบ รายการใต้หัวข้อเหล่านี้ถูกนำเข้าเป็นปริมาณติดลบ
   deduction_headings: string[]
+  deduction_items: number
 }
 
 export function cellNumber(v: unknown): number | null {
@@ -182,7 +183,8 @@ const DATE_ONLY_RE = /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\.?$/
 // กำไรในงานก่อสร้างของ S-2000 อยู่ราว 8 ถึง 12 เปอร์เซ็นต์ ตั้งเพดานไว้กว้างกว่านั้นมาก
 const MAX_PLAUSIBLE_MARKUP_PCT = 200
 
-const DEDUCTION_RE = /(งานลด|ลดงาน|\(ลด\)|รายการลด|deduct|omit)/i
+// "งานลด" ต้องจบคำ ไม่งั้นจะไปจับงานจริงอย่าง "งานลดระดับพื้น"
+export const DEDUCTION_RE = /(งานลด(?=$|[\s()\-:])|ลดงาน|\(ลด\)|รายการลด|\bdeduct|\bomit)/i
 
 export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMarkupPct = 0): SplitResult {
   const sections: ParsedSection[] = []
@@ -195,8 +197,10 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
   let pending: string[] = []
   let activeSection: number | null = null
   let lastParent: string | null = null
+  let activeDeduction = false
   let inSummary = false
   const deductions = new Set<string>()
+  let deductionItems = 0
 
   // ตรวจคอลัมน์ markup ก่อนใช้งาน ถ้าค่าออกนอกช่วงที่เป็นไปได้ของเปอร์เซ็นต์กำไร
   // แปลว่าจับคอลัมน์ผิด (เช่นไปจับคอลัมน์ราคาที่มี % ในชื่อ) ให้ทิ้งทั้งคอลัมน์แล้วใช้ค่าเริ่มต้น
@@ -270,17 +274,24 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
       sections.push({ code: parent, name, sort_order: sections.length })
       activeSection = sections.length - 1
       lastParent = parent
+      // หมวดย่อยที่อยู่ใต้หัวข้องานลดเป็นงานลดทั้งหมด จนกว่าจะเจอหมวดใหญ่ใหม่
+      activeDeduction = DEDUCTION_RE.test(name) || (parent !== null && DEDUCTION_RE.test(parent))
       pending = []
     }
 
-    const push = (category: BoqCategory, unitCost: number) => {
+    // งานลดเก็บเป็นปริมาณติดลบ ราคาเป็นบวกเสมอ ยอดรวมจึงหักออกจากงบโดยไม่สนว่าไฟล์เขียนเครื่องหมายไว้ที่ช่องไหน
+    const signedQty = activeDeduction ? -Math.abs(qty) : qty
+
+    const push = (category: BoqCategory, rawUnitCost: number) => {
+      const unitCost = activeDeduction ? Math.abs(rawUnitCost) : rawUnitCost
+      if (activeDeduction) deductionItems++
       const sell = unitCost * (1 + markup / 100)
       items.push({
         section_index: activeSection,
         item_no: itemNo || null,
         description,
         unit,
-        qty,
+        qty: signedQty,
         unit_cost: unitCost,
         category,
         markup_pct: markup,
@@ -309,7 +320,14 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
       push('material', 0)
     }
   }
-  return { sections, items, skipped, markup_column_rejected: markupColumnRejected, deduction_headings: [...deductions] }
+  return {
+    sections,
+    items,
+    skipped,
+    markup_column_rejected: markupColumnRejected,
+    deduction_headings: [...deductions],
+    deduction_items: deductionItems,
+  }
 }
 
 export interface SectionTotals {
