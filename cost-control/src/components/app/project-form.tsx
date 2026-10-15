@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
-import type { Branch, Project } from '@/lib/types'
+import type { Branch, Project, ProjectStatus } from '@/lib/types'
+import { PROJECT_STATUS_LABELS } from '@/lib/types'
 
 export function ProjectForm({ branches, project }: { branches: Branch[]; project?: Project }) {
   const router = useRouter()
@@ -53,6 +54,15 @@ export function ProjectForm({ branches, project }: { branches: Branch[]; project
       <FormField label="ลูกค้า">
         <Input name="customer_name" defaultValue={project?.customer_name ?? ''} />
       </FormField>
+      {project && (
+        <FormField label="สถานะโครงการ" hint="เปลี่ยนเป็นปิดแล้วเมื่อจบงาน โครงการที่ปิดจะไม่แสดงบนแดชบอร์ด">
+          <Select name="status" defaultValue={project.status}>
+            {(Object.keys(PROJECT_STATUS_LABELS) as ProjectStatus[]).map(k => (
+              <option key={k} value={k}>{PROJECT_STATUS_LABELS[k]}</option>
+            ))}
+          </Select>
+        </FormField>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField label="มูลค่าสัญญา (บาท)">
           <Input name="contract_value" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={project?.contract_value ?? ''} />
