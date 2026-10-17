@@ -64,7 +64,7 @@ export function InvoiceDialog({ pos, suppliers }: { pos: PoOption[]; suppliers: 
             </FormField>
             <div className="grid grid-cols-2 gap-3">
               <FormField label="เลขที่ใบแจ้งหนี้"><Input name="invoice_no" required /></FormField>
-              <FormField label="จำนวนเงิน (บาท)"><Input name="amount" type="number" step="0.01" min="0" inputMode="decimal" required defaultValue={po?.total_amount ?? ''} key={po?.id ?? 'amt'} /></FormField>
+              <FormField label="จำนวนเงิน (ไม่รวม VAT)"><Input name="amount" type="number" step="0.01" min="0" inputMode="decimal" required defaultValue={po?.total_amount ?? ''} key={po?.id ?? 'amt'} /></FormField>
               <FormField label="วันที่ใบแจ้งหนี้"><Input name="invoice_date" type="date" defaultValue={todayISO()} required /></FormField>
               <FormField label="ครบกำหนดชำระ"><Input name="due_date" type="date" /></FormField>
             </div>
@@ -109,7 +109,7 @@ export function PaymentDialog({ invoiceId, invoiceNo, remaining }: { invoiceId: 
             {error && <Alert tone="danger">{error}</Alert>}
             <input type="hidden" name="invoice_id" value={invoiceId} />
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="จำนวนเงิน (บาท)" hint={`คงเหลือ ${formatBaht(remaining)}`}>
+              <FormField label="จำนวนเงิน (ไม่รวม VAT)" hint={`คงเหลือ ${formatBaht(remaining)}`}>
                 <Input name="amount" type="number" step="0.01" min="0" inputMode="decimal" required defaultValue={remaining > 0 ? remaining.toFixed(2) : ''} />
               </FormField>
               <FormField label="วันที่ชำระ"><Input name="paid_at" type="date" defaultValue={todayISO()} required /></FormField>

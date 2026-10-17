@@ -64,7 +64,7 @@ export function ProjectForm({ branches, project }: { branches: Branch[]; project
         </FormField>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label="มูลค่าสัญญา (บาท)">
+        <FormField label="มูลค่าสัญญา (ไม่รวม VAT)" hint="ใช้คำนวณกำไรเทียบกับต้นทุนใน BOQ ซึ่งไม่รวม VAT">
           <Input name="contract_value" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={project?.contract_value ?? ''} />
         </FormField>
         <FormField label="เงินประกันผลงาน (%)">

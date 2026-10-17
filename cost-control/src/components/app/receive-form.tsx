@@ -67,7 +67,7 @@ export function ReceiveForm({ poId, items }: { poId: string; items: Item[] }) {
                 <FormField label="ปริมาณที่รับจริง">
                   <Input type="number" step="0.001" min="0" inputMode="decimal" value={qtys[i.po_item_id]} onChange={e => setQtys(v => ({ ...v, [i.po_item_id]: e.target.value }))} />
                 </FormField>
-                <FormField label={source === 'internal_stock' ? 'ราคาทุนต่อหน่วย' : 'ราคาต่อหน่วย'}>
+                <FormField label={source === 'internal_stock' ? 'ราคาทุนต่อหน่วย (ไม่รวม VAT)' : 'ราคาต่อหน่วย (ไม่รวม VAT)'}>
                   <Input type="number" step="0.01" min="0" inputMode="decimal" value={costs[i.po_item_id]} onChange={e => setCosts(v => ({ ...v, [i.po_item_id]: e.target.value }))} />
                 </FormField>
               </div>

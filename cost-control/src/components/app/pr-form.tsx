@@ -15,6 +15,8 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
+import { VatPriceInput } from './vat-price-input'
+import { addVat } from '@/lib/vat'
 import { cn } from '@/lib/utils'
 
 export interface PrFormItem {
@@ -198,14 +200,10 @@ export function PrForm({ projects, suppliers, settings, initialProjectId }: { pr
               )}
             </FormField>
 
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="ปริมาณ">
-                <Input type="number" step="0.001" min="0" inputMode="decimal" value={line.qty} onChange={e => update(line.key, { qty: e.target.value })} required />
-              </FormField>
-              <FormField label="ราคาต่อหน่วย (บาท)">
-                <Input type="number" step="0.01" min="0" inputMode="decimal" value={line.unit_price} onChange={e => update(line.key, { unit_price: e.target.value })} required />
-              </FormField>
-            </div>
+            <FormField label={`ปริมาณ${item?.unit ? ` (${item.unit})` : ''}`}>
+              <Input type="number" step="0.001" min="0" inputMode="decimal" value={line.qty} onChange={e => update(line.key, { qty: e.target.value })} required />
+            </FormField>
+            <VatPriceInput value={line.unit_price} onChange={v => update(line.key, { unit_price: v })} required invalid={!!ev?.priceOverThreshold} />
 
             {item && ev && (line.qty !== '' || line.unit_price !== '') && (
               <div className="rounded-lg border border-border bg-muted/50 p-3 text-sm space-y-2">
@@ -218,8 +216,8 @@ export function PrForm({ projects, suppliers, settings, initialProjectId }: { pr
                 {ev.qtyOverBoq && <div className="text-danger-fg font-medium text-center">เกิน BOQ {formatQty(ev.qtyOverBy)} {item.unit ?? 'หน่วย'}</div>}
                 {!item.is_off_boq && (
                   <div className="grid grid-cols-3 gap-1 text-center border-t border-border pt-2">
-                    <div><div className="text-xs text-muted-foreground">ราคาทด</div><div className="tabular">{formatBaht(item.unit_cost)}</div></div>
-                    <div><div className="text-xs text-muted-foreground">ราคาครั้งนี้</div><div className="tabular">{formatBaht(Number(line.unit_price) || 0)}</div></div>
+                    <div><div className="text-xs text-muted-foreground">ราคาทด (ไม่รวม VAT)</div><div className="tabular">{formatBaht(item.unit_cost)}</div></div>
+                    <div><div className="text-xs text-muted-foreground">ราคาครั้งนี้ (ไม่รวม VAT)</div><div className="tabular">{formatBaht(Number(line.unit_price) || 0)}</div></div>
                     <div>
                       <div className="text-xs text-muted-foreground">ส่วนต่าง</div>
                       <div className={cn('tabular', ev.priceOverThreshold && 'text-danger-fg font-medium', ev.priceBelow && 'text-success-fg font-medium')}>
@@ -229,7 +227,9 @@ export function PrForm({ projects, suppliers, settings, initialProjectId }: { pr
                   </div>
                 )}
                 {ev.priceOverThreshold && <div className="text-danger-fg font-medium text-center">แพงกว่าราคาที่ทดไว้เกิน {settings.price_variance_threshold_pct}%</div>}
-                <div className="text-right text-xs text-muted-foreground">รวม {formatBaht(ev.amount)} บาท</div>
+                <div className="text-right text-xs text-muted-foreground tabular">
+                  รวม {formatBaht(ev.amount)} บาท (ไม่รวม VAT) · {formatBaht(addVat(ev.amount))} บาท (รวม VAT)
+                </div>
               </div>
             )}
 

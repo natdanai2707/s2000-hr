@@ -4,7 +4,8 @@ import { requireUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader, StatusBadge, Money } from '@/components/app/common'
 import { Button } from '@/components/ui/button'
-import { formatBaht, formatQty } from '@/lib/format'
+import { formatBaht, formatQty, toNumber } from '@/lib/format'
+import { addVat, VAT_RATE_PCT } from '@/lib/vat'
 import { formatThaiDateTime } from '@/lib/date'
 import { PoCancelButton } from '@/components/app/po-cancel-button'
 import { AttachmentLink } from '@/components/app/attachment-link'
@@ -53,7 +54,8 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
       </div>
       <div className="rounded-xl border border-border bg-card p-4 text-sm grid grid-cols-2 gap-3 mb-4">
         <div><div className="text-xs text-muted-foreground">ซัพพลายเออร์</div><div>{(po.suppliers as unknown as { name: string } | null)?.name ?? 'ไม่ระบุ'}</div></div>
-        <div><div className="text-xs text-muted-foreground">มูลค่ารวม</div><Money value={po.total_amount} className="font-semibold" /></div>
+        <div><div className="text-xs text-muted-foreground">มูลค่ารวม (ไม่รวม VAT)</div><Money value={po.total_amount} className="font-semibold" /></div>
+        <div><div className="text-xs text-muted-foreground">มูลค่ารวม (รวม VAT {VAT_RATE_PCT}%)</div><Money value={addVat(toNumber(po.total_amount))} /></div>
       </div>
 
       <h2 className="font-semibold mb-2">รายการ</h2>

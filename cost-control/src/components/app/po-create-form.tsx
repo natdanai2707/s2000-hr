@@ -4,12 +4,12 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPoFromPr } from '@/actions/purchase-orders'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
+import { VatPriceInput } from './vat-price-input'
+import { addVat } from '@/lib/vat'
 import { formatBaht, formatQty } from '@/lib/format'
-import { cn } from '@/lib/utils'
 
 interface Item {
   id: string
@@ -72,20 +72,19 @@ export function PoCreateForm({ prId, items, suppliers, defaultSupplierId, thresh
           return (
             <div key={i.id} className="p-4 space-y-2">
               <div className="text-sm font-medium">{i.description}</div>
-              <div className="text-xs text-muted-foreground">{formatQty(i.qty)} {i.unit ?? ''} · ราคาตาม PR {formatBaht(i.unit_price)}</div>
-              <div className="grid grid-cols-2 gap-3 items-end">
-                <FormField label="ราคาต่อหน่วยใน PO">
-                  <Input type="number" step="0.01" min="0" inputMode="decimal" value={prices[i.id]} onChange={e => setPrices(v => ({ ...v, [i.id]: e.target.value }))} className={cn(over && 'border-destructive')} />
-                </FormField>
-                <div className="text-right text-sm tabular pb-2">รวม {formatBaht(i.qty * p)}</div>
-              </div>
+              <div className="text-xs text-muted-foreground">{formatQty(i.qty)} {i.unit ?? ''} · ราคาตาม PR {formatBaht(i.unit_price)} (ไม่รวม VAT)</div>
+              <VatPriceInput label="ราคาต่อหน่วยใน PO" value={prices[i.id]} onChange={v => setPrices(prev => ({ ...prev, [i.id]: v }))} invalid={over} />
+              <div className="text-right text-sm tabular">รวม {formatBaht(i.qty * p)} (ไม่รวม VAT)</div>
               {over && <p className="text-xs text-danger-fg">แพงขึ้นเกิน {thresholdPct}% ต้องกลับไปอนุมัติใหม่</p>}
             </div>
           )
         })}
         <div className="p-4 flex justify-between font-semibold text-sm">
           <span>มูลค่ารวม</span>
-          <span className="tabular">{formatBaht(total)} บาท</span>
+          <span className="tabular text-right">
+            {formatBaht(total)} บาท (ไม่รวม VAT)
+            <span className="block text-xs font-normal text-muted-foreground">{formatBaht(addVat(total))} บาท (รวม VAT)</span>
+          </span>
         </div>
       </div>
       {overThreshold.length > 0 && <Alert tone="warning">มี {overThreshold.length} รายการที่ราคาแพงขึ้นเกินเกณฑ์ เมื่อกดบันทึก ระบบจะปรับราคาใน PR และส่งกลับไปอนุมัติใหม่แทนการออก PO</Alert>}
