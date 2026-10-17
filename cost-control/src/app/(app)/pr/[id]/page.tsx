@@ -11,6 +11,7 @@ import { formatThaiDate, formatThaiDateTime } from '@/lib/date'
 import { PrDecision } from '@/components/app/pr-decision'
 import { AttachmentLink } from '@/components/app/attachment-link'
 import { VoidDirectPurchase, RecordApprovedAsDirect } from '@/components/app/void-direct-purchase'
+import { QtyFactorEditor } from '@/components/app/qty-factor-editor'
 
 export default async function PrDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -39,6 +40,8 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
   const isDirectPurchase = (approvals ?? []).some(a => a.step === 'direct')
   const canVoid = direct && isDirectPurchase && pr.status === 'approved'
   const canRecordDirect = direct && !isDirectPurchase && pr.status === 'approved' && !po
+  // ซื้อเป็นหน่วยอื่นจาก BOQ เติมหรือแก้ตัวแปลงหน่วยภายหลังได้ (สิทธิ์เดียวกับ can_manage_project)
+  const canSetFactor = pr.status !== 'cancelled' && (role === 'management' || role === 'admin' || (role === 'project_manager' && isMember))
   const canCreatePo = !direct && pr.status === 'approved' && !po && (role === 'purchasing' || role === 'management')
 
   return (
@@ -87,6 +90,16 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
                 <div className="text-xs text-muted-foreground tabular">
                   1 {it.unit ?? 'หน่วย'} = {formatQty(it.qty_factor)} {b?.unit ?? ''} · เทียบ BOQ = {formatQty(Number(it.qty) * Number(it.qty_factor))} {b?.unit ?? ''} ที่ {formatBaht(Number(it.unit_price) / Number(it.qty_factor))} ต่อ {b?.unit ?? 'หน่วย'}
                 </div>
+              )}
+              {canSetFactor && b && !b.is_off_boq && (it.qty_factor === null || Number(it.qty_factor) !== 1 || (it.unit ?? '') !== (b.unit ?? '')) && (
+                <QtyFactorEditor
+                  prItemId={it.id}
+                  factor={it.qty_factor === null ? null : Number(it.qty_factor)}
+                  qty={Number(it.qty)}
+                  unitPrice={Number(it.unit_price)}
+                  buyUnit={it.unit}
+                  boqUnit={b.unit}
+                />
               )}
               {(it.qty_over_boq || it.price_over_threshold || b?.is_off_boq) && (
                 <div className="mt-1 text-xs">
