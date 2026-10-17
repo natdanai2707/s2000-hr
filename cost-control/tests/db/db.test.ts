@@ -477,6 +477,45 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     await expect(runAs(client, mgmt, q => q(`update public.boq_items set qty = 1 where id = $1`, [old]))).rejects.toThrow(/ถูกแทนที่/)
   })
 
+  it('ซื้อเป็นหน่วยอื่นจาก BOQ: เทียบ BOQ ด้วยหน่วย BOQ ยอดเงินตามหน่วยที่ซื้อจริง', async () => {
+    const cur = (await client.query(`select confirmed_version_id from public.v_project_summary where project_id = $1`, [projectA])).rows[0].confirmed_version_id
+    // รายการเหล็กคิดเป็นกิโล ต้นทุน 30 บาทต่อกิโล ปริมาณ 3,000 กิโล
+    const kg = await runAs(client, mgmt, async q =>
+      (await q(`insert into public.boq_items (boq_version_id, item_no, description, unit, qty, unit_cost, category, sell_unit_price)
+                values ($1, '7.1', 'เหล็ก H-BEAM (49.9 kg/m) Size 6 m.', 'kg', 3000, 30, 'material', 33) returning id`, [cur])).rows[0].id as string)
+    await client.query(`insert into public.project_members (project_id, user_id) values ($1, $2) on conflict do nothing`, [projectA, mgmt])
+
+    const buy = async (pieces: number, pricePerPiece: number, reason: string | null) => runAs(client, mgmt, async q => {
+      const id = (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $2) returning id`, [projectA, mgmt])).rows[0].id as string
+      await q(`insert into public.purchase_request_items (pr_id, boq_item_id, description, qty, unit, unit_price, qty_factor, variance_reason)
+               values ($1, $2, 'เหล็ก H-BEAM', $3, 'เส้น', $4, 299.4, $5)`, [id, kg, pieces, pricePerPiece, reason])
+      await q(`select public.submit_purchase_request($1)`, [id])
+      await q(`select public.record_direct_purchase($1)`, [id])
+      return (await q(`select qty_over_boq, price_over_threshold from public.purchase_request_items where pr_id = $1`, [id])).rows[0]
+    })
+
+    // 10 เส้น × 8,982 บาท = 2,994 กิโล ที่ 30 บาทต่อกิโล ไม่เกิน BOQ ไม่แพงกว่าต้นทุน
+    const ok = await buy(10, 8982, null)
+    expect(ok).toEqual({ qty_over_boq: false, price_over_threshold: false })
+    let row = (await client.query(`select qty_ordered, qty_received, actual from public.v_boq_item_costs where boq_item_id = $1`, [kg])).rows[0]
+    expect(n(row.qty_ordered)).toBeCloseTo(2994, 3)
+    expect(n(row.qty_received)).toBeCloseTo(2994, 3)
+    expect(n(row.actual)).toBe(89820)
+
+    // อีก 1 เส้นที่ 9,900 บาท: รวม 3,293.4 กิโล เกิน BOQ และ 33.07 บาทต่อกิโล แพงเกิน 5%
+    const over = await buy(1, 9900, 'ราคาเหล็กขึ้น')
+    expect(over).toEqual({ qty_over_boq: true, price_over_threshold: true })
+    row = (await client.query(`select qty_ordered, actual from public.v_boq_item_costs where boq_item_id = $1`, [kg])).rows[0]
+    expect(n(row.qty_ordered)).toBeCloseTo(3293.4, 3)
+    expect(n(row.actual)).toBe(89820 + 9900)
+
+    // ตัวแปลงต้องมากกว่า 0
+    await expect(runAs(client, mgmt, async q => {
+      const id = (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $2) returning id`, [projectA, mgmt])).rows[0].id
+      await q(`insert into public.purchase_request_items (pr_id, boq_item_id, description, qty, unit, unit_price, qty_factor) values ($1, $2, 'x', 1, 'เส้น', 1, 0)`, [id, kg])
+    })).rejects.toThrow(/check constraint/)
+  })
+
   it('ยกเลิกการยืนยัน BOQ ได้เมื่อโครงการยังไม่มีเอกสารต้นทุน แล้วกลับมาแก้ตัวเลขได้', async () => {
     const vB = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectB])).rows[0].id
     const itemB = (await client.query(`select id from public.boq_items where boq_version_id = $1 and not is_off_boq`, [vB])).rows[0].id

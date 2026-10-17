@@ -21,7 +21,7 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
     .maybeSingle()
   if (!po) notFound()
   const [{ data: items }, { data: receipts }, { data: invoices }, { data: members }] = await Promise.all([
-    supabase.from('purchase_order_items').select('*, boq_items(item_no, description)').eq('po_id', id).order('created_at'),
+    supabase.from('purchase_order_items').select('*, boq_items(item_no, description, unit)').eq('po_id', id).order('created_at'),
     supabase.from('goods_receipts').select('*, profiles!goods_receipts_received_by_fkey(full_name), goods_receipt_items(id, po_item_id, qty_received, unit_cost)').eq('po_id', id).order('received_at'),
     supabase.from('invoices').select('id, invoice_no, amount, status, due_date').eq('po_id', id),
     supabase.from('project_members').select('user_id').eq('project_id', po.project_id),
@@ -61,7 +61,7 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
       <h2 className="font-semibold mb-2">รายการ</h2>
       <div className="space-y-2 mb-4">
         {(items ?? []).map(it => {
-          const b = it.boq_items as unknown as { item_no: string | null; description: string } | null
+          const b = it.boq_items as unknown as { item_no: string | null; description: string; unit: string | null } | null
           const rec = receivedByItem.get(it.id) ?? 0
           return (
             <div key={it.id} className="rounded-xl border border-border bg-card p-3 text-sm">
@@ -70,6 +70,11 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
                 <span className="tabular">{formatQty(it.qty)} {it.unit ?? ''} × {formatBaht(it.unit_price)}</span>
                 <span className="tabular font-medium">{formatBaht(Number(it.qty) * Number(it.unit_price))}</span>
               </div>
+              {Number(it.qty_factor ?? 1) !== 1 && (
+                <div className="text-xs text-muted-foreground tabular">
+                  1 {it.unit ?? 'หน่วย'} = {formatQty(it.qty_factor)} {b?.unit ?? ''} · เทียบ BOQ = {formatQty(Number(it.qty) * Number(it.qty_factor))} {b?.unit ?? ''}
+                </div>
+              )}
               <div className="text-xs text-muted-foreground">รับแล้ว {formatQty(rec)} / {formatQty(it.qty)} {it.unit ?? ''}</div>
             </div>
           )

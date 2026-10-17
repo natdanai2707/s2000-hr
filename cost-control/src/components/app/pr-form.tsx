@@ -16,10 +16,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import { VatPriceInput } from './vat-price-input'
+import { suggestConversion, toBoqUnits } from '@/lib/units'
 import { SupplierCombobox } from './supplier-combobox'
 import { addVat } from '@/lib/vat'
 import { cn } from '@/lib/utils'
-import { DateInput } from './date-input'
 
 export interface PrFormItem {
   id: string
@@ -48,17 +48,30 @@ interface Line {
   supplier_id: string
   supplier_name: string
   variance_reason: string
+  // ซื้อเป็นหน่วยอื่นจาก BOQ: ปริมาณและราคาในบรรทัดเป็นหน่วยที่ซื้อ factor = หน่วย BOQ ต่อหนึ่งหน่วยที่ซื้อ
+  buy_other: boolean
+  buy_unit: string
+  factor: string
 }
 
 function newLine(): Line {
-  return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '' }
+  return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '', buy_other: false, buy_unit: '', factor: '' }
+}
+
+function lineFactor(l: Line): number {
+  if (!l.buy_other) return 1
+  const f = Number(l.factor)
+  return f > 0 ? f : NaN
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
 }
 
 export function PrForm({ projects, suppliers, settings, initialProjectId, directMode = false }: { projects: PrFormProject[]; suppliers: { id: string; name: string }[]; settings: Settings; initialProjectId: string | null; directMode?: boolean }) {
   const router = useRouter()
   const [projectId, setProjectId] = useState(initialProjectId && projects.some(p => p.id === initialProjectId) ? initialProjectId : projects.length === 1 ? projects[0].id : '')
   const [lines, setLines] = useState<Line[]>([newLine()])
-  const [neededBy, setNeededBy] = useState('')
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -68,19 +81,45 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
   const project = projects.find(p => p.id === projectId)
   const items = useMemo(() => project?.items ?? [], [project])
 
+  // เทียบกับ BOQ ในหน่วยของ BOQ เสมอ ยอดเงินเท่าเดิมไม่ว่าจะซื้อเป็นหน่วยไหน
   const evaluated = lines.map(l => {
     const item = items.find(i => i.id === l.boq_item_id)
-    if (!item) return { line: l, item: null, ev: null }
+    if (!item) return { line: l, item: null, ev: null, boq: null }
+    const f = lineFactor(l)
+    const boq = toBoqUnits(Number(l.qty) || 0, Number(l.unit_price) || 0, Number.isNaN(f) ? 1 : f)
     const ev = evaluateLine(
-      { qty: Number(l.qty) || 0, unitPrice: Number(l.unit_price) || 0, boqQty: item.qty, boqUnitCost: item.unit_cost, qtyOrdered: item.qty_ordered, isOffBoq: item.is_off_boq, varianceReason: l.variance_reason },
+      { qty: boq.qty, unitPrice: boq.unitPrice, boqQty: item.qty, boqUnitCost: item.unit_cost, qtyOrdered: item.qty_ordered, isOffBoq: item.is_off_boq, varianceReason: l.variance_reason },
       settings
     )
-    return { line: l, item, ev }
+    return { line: l, item, ev, boq }
   })
   const routing = routePurchaseRequest(
-    evaluated.filter(e => e.item).map(e => ({ qty: Number(e.line.qty) || 0, unitPrice: Number(e.line.unit_price) || 0, boqQty: e.item!.qty, boqUnitCost: e.item!.unit_cost, qtyOrdered: e.item!.qty_ordered, isOffBoq: e.item!.is_off_boq, varianceReason: e.line.variance_reason })),
+    evaluated.filter(e => e.item).map(e => ({ qty: e.boq!.qty, unitPrice: e.boq!.unitPrice, boqQty: e.item!.qty, boqUnitCost: e.item!.unit_cost, qtyOrdered: e.item!.qty_ordered, isOffBoq: e.item!.is_off_boq, varianceReason: e.line.variance_reason })),
     settings
   )
+
+  // เลือกรายการ BOQ: ถ้าเป็นเหล็กที่ BOQ คิดเป็นกิโลและบอกน้ำหนักกับความยาว ตั้งให้ซื้อเป็นเส้นพร้อมตัวแปลง
+  function chooseItem(line: Line, i: PrFormItem) {
+    const sug = suggestConversion(i.description, i.unit)
+    if (sug) {
+      update(line.key, { boq_item_id: i.id, search: '', buy_other: true, buy_unit: sug.unit, factor: String(sug.factor), unit_price: line.unit_price || String(round2(i.unit_cost * sug.factor)) })
+    } else {
+      update(line.key, { boq_item_id: i.id, search: '', buy_other: false, buy_unit: '', factor: '', unit_price: line.unit_price || String(i.unit_cost) })
+    }
+  }
+
+  // เปิดปิดการซื้อเป็นหน่วยอื่น แปลงปริมาณและราคาที่กรอกไว้ให้ตามหน่วยใหม่
+  function toggleBuyOther(line: Line, item: PrFormItem, on: boolean) {
+    const f = on ? Number(line.factor) || suggestConversion(item.description, item.unit)?.factor || 0 : lineFactor(line)
+    const ok = f > 0
+    update(line.key, {
+      buy_other: on,
+      buy_unit: on ? line.buy_unit || suggestConversion(item.description, item.unit)?.unit || '' : line.buy_unit,
+      factor: on && ok ? String(f) : line.factor,
+      qty: line.qty === '' || !ok ? line.qty : String(Math.round((on ? Number(line.qty) / f : Number(line.qty) * f) * 1000) / 1000),
+      unit_price: line.unit_price === '' || !ok ? line.unit_price : String(round2(on ? Number(line.unit_price) * f : Number(line.unit_price) / f)),
+    })
+  }
 
   function update(key: string, patch: Partial<Line>) {
     setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)))
@@ -93,6 +132,9 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
       if (!e.item) return 'กรุณาเลือกรายการ BOQ ให้ครบทุกบรรทัด'
       const qty = Number(e.line.qty)
       const price = Number(e.line.unit_price)
+      const factor = lineFactor(e.line)
+      if (e.line.buy_other && !e.line.buy_unit.trim()) return 'กรุณาระบุหน่วยที่ซื้อ'
+      if (Number.isNaN(factor)) return 'กรุณาระบุว่าหน่วยที่ซื้อหนึ่งหน่วยเท่ากับกี่หน่วยใน BOQ'
       if (!(qty > 0)) return 'ปริมาณต้องมากกว่า 0'
       if (!(price >= 0) || e.line.unit_price === '') return 'กรุณากรอกราคาต่อหน่วย'
       if (e.ev!.requiresReason && !e.line.variance_reason.trim()) return 'กรุณาระบุเหตุผลสำหรับรายการที่เกิน BOQ เกินราคาที่ทดไว้ หรือนอก BOQ'
@@ -100,15 +142,16 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
         boq_item_id: e.item.id,
         description: e.item.description,
         qty,
-        unit: e.item.unit,
+        unit: e.line.buy_other ? e.line.buy_unit.trim() : e.item.unit,
         unit_price: price,
+        qty_factor: factor,
         // ชื่อใหม่ที่ยังไม่มีในระบบ ฐานข้อมูลจะบันทึกเข้ารายชื่อซัพพลายเออร์ให้ตอนบันทึก
         supplier_id: e.line.supplier_id || null,
         supplier_name: e.line.supplier_name.trim() || null,
         variance_reason: e.line.variance_reason.trim() || null,
       })
     }
-    return { client_ref: newClientRef(), project_id: projectId, needed_by_date: neededBy || null, note: note.trim() || null, lines: payloadLines }
+    return { client_ref: newClientRef(), project_id: projectId, needed_by_date: null, note: note.trim() || null, lines: payloadLines }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -160,7 +203,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
         </FormField>
       </div>
 
-      {evaluated.map(({ line, item, ev }, idx) => {
+      {evaluated.map(({ line, item, ev, boq }, idx) => {
         const q = line.search.trim().toLowerCase()
         const matches = q && !item ? items.filter(i => `${i.item_no ?? ''} ${i.description} ${i.unit ?? ''}`.toLowerCase().includes(q)).slice(0, 12) : []
         return (
@@ -189,7 +232,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
                     <ul className="mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-card divide-y divide-border">
                       {matches.map(i => (
                         <li key={i.id}>
-                          <button type="button" className="w-full text-left px-3 py-2 hover:bg-muted text-sm" onClick={() => update(line.key, { boq_item_id: i.id, search: '', unit_price: line.unit_price || String(i.unit_cost) })}>
+                          <button type="button" className="w-full text-left px-3 py-2 hover:bg-muted text-sm" onClick={() => chooseItem(line, i)}>
                             <div className="font-medium">{i.item_no ? `${i.item_no} ` : ''}{i.description}</div>
                             <div className="text-xs text-muted-foreground">{BOQ_CATEGORY_LABELS[i.category]} · {i.unit ?? '-'} · คงเหลือ {formatQty(i.qty - i.qty_ordered)}</div>
                           </button>
@@ -202,10 +245,41 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
               )}
             </FormField>
 
-            <FormField label={`ปริมาณ${item?.unit ? ` (${item.unit})` : ''}`}>
+            {item && (
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="w-4 h-4" checked={line.buy_other} onChange={e => toggleBuyOther(line, item, e.target.checked)} />
+                ซื้อเป็นหน่วยอื่นจาก BOQ{item.unit ? ` (BOQ คิดเป็น ${item.unit})` : ''}
+              </label>
+            )}
+            {item && line.buy_other && (
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="หน่วยที่ซื้อ">
+                  <Input value={line.buy_unit} onChange={e => update(line.key, { buy_unit: e.target.value })} placeholder="เช่น เส้น แผ่น" required />
+                </FormField>
+                <FormField
+                  label={`1 ${line.buy_unit || 'หน่วย'} = กี่ ${item.unit ?? 'หน่วย BOQ'}`}
+                  hint={suggestConversion(item.description, item.unit) ? `คำนวณจาก ${suggestConversion(item.description, item.unit)!.note}` : undefined}
+                >
+                  <Input type="number" step="0.001" min="0" inputMode="decimal" value={line.factor} onChange={e => update(line.key, { factor: e.target.value })} required />
+                </FormField>
+              </div>
+            )}
+
+            <FormField label={`ปริมาณ${line.buy_other && line.buy_unit ? ` (${line.buy_unit})` : item?.unit ? ` (${item.unit})` : ''}`}>
               <Input type="number" step="0.001" min="0" inputMode="decimal" value={line.qty} onChange={e => update(line.key, { qty: e.target.value })} required />
             </FormField>
-            <VatPriceInput value={line.unit_price} onChange={v => update(line.key, { unit_price: v })} required invalid={!!ev?.priceOverThreshold} />
+            <VatPriceInput
+              label={line.buy_other && line.buy_unit ? `ราคาต่อ${line.buy_unit}` : 'ราคาต่อหน่วย'}
+              value={line.unit_price}
+              onChange={v => update(line.key, { unit_price: v })}
+              required
+              invalid={!!ev?.priceOverThreshold}
+            />
+            {item && line.buy_other && boq && !Number.isNaN(lineFactor(line)) && line.qty !== '' && (
+              <p className="text-xs text-muted-foreground tabular">
+                = {formatQty(boq.qty)} {item.unit ?? ''} · ราคา {formatBaht(boq.unitPrice)} บาทต่อ {item.unit ?? 'หน่วย'} (ไม่รวม VAT)
+              </p>
+            )}
 
             {item && ev && (line.qty !== '' || line.unit_price !== '') && (
               <div className="rounded-lg border border-border bg-muted/50 p-3 text-sm space-y-2">
@@ -213,13 +287,13 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
                   <div><div className="text-xs text-muted-foreground">ตาม BOQ</div><div className="tabular">{item.is_off_boq ? '-' : formatQty(item.qty)}</div></div>
                   <div><div className="text-xs text-muted-foreground">สั่งแล้ว</div><div className="tabular">{formatQty(item.qty_ordered)}</div></div>
                   <div><div className="text-xs text-muted-foreground">คงเหลือ</div><div className="tabular">{item.is_off_boq ? '-' : formatQty(ev.qtyRemaining)}</div></div>
-                  <div><div className="text-xs text-muted-foreground">ครั้งนี้</div><div className="tabular">{formatQty(Number(line.qty) || 0)}</div></div>
+                  <div><div className="text-xs text-muted-foreground">ครั้งนี้</div><div className="tabular">{formatQty(boq?.qty ?? 0)}</div></div>
                 </div>
                 {ev.qtyOverBoq && <div className="text-danger-fg font-medium text-center">เกิน BOQ {formatQty(ev.qtyOverBy)} {item.unit ?? 'หน่วย'}</div>}
                 {!item.is_off_boq && (
                   <div className="grid grid-cols-3 gap-1 text-center border-t border-border pt-2">
-                    <div><div className="text-xs text-muted-foreground">ต้นทุนที่ทด (ไม่รวม VAT)</div><div className="tabular">{formatBaht(item.unit_cost)}</div></div>
-                    <div><div className="text-xs text-muted-foreground">ราคาครั้งนี้ (ไม่รวม VAT)</div><div className="tabular">{formatBaht(Number(line.unit_price) || 0)}</div></div>
+                    <div><div className="text-xs text-muted-foreground">ต้นทุนที่ทดต่อ {item.unit ?? 'หน่วย'} (ไม่รวม VAT)</div><div className="tabular">{formatBaht(item.unit_cost)}</div></div>
+                    <div><div className="text-xs text-muted-foreground">ราคาครั้งนี้ต่อ {item.unit ?? 'หน่วย'} (ไม่รวม VAT)</div><div className="tabular">{formatBaht(boq?.unitPrice ?? 0)}</div></div>
                     <div>
                       <div className="text-xs text-muted-foreground">ส่วนต่าง</div>
                       <div className={cn('tabular', ev.priceOverThreshold && 'text-danger-fg font-medium', ev.priceBelow && 'text-success-fg font-medium')}>
@@ -232,7 +306,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
                 {/* แพงกว่าต้นทุนแม้ไม่ถึงเกณฑ์ก็ต้องเห็น ยอดเกินเล็กๆ หลายรายการรวมกันทำให้กำไรหายได้ */}
                 {!item.is_off_boq && !ev.priceOverThreshold && ev.priceDiff > 0 && (
                   <div className="text-warning-fg font-medium text-center">
-                    แพงกว่าต้นทุนที่ทดไว้ {formatBaht(ev.priceDiff)} บาทต่อหน่วย รวม {formatBaht(ev.priceDiff * (Number(line.qty) || 0))} บาท
+                    แพงกว่าต้นทุนที่ทดไว้ {formatBaht(ev.priceDiff)} บาทต่อ {item.unit ?? 'หน่วย'} รวม {formatBaht(ev.priceDiff * (boq?.qty ?? 0))} บาท
                   </div>
                 )}
                 <div className="text-right text-xs text-muted-foreground tabular">
@@ -263,9 +337,6 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
       </Button>
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-        <FormField label="วันที่ต้องการ">
-          <DateInput value={neededBy} onChange={setNeededBy} />
-        </FormField>
         <FormField label="หมายเหตุ">
           <Textarea value={note} onChange={e => setNote(e.target.value)} />
         </FormField>

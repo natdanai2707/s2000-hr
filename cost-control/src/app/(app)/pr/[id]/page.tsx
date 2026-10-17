@@ -78,6 +78,11 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
                 <span className="tabular">{formatQty(it.qty)} {it.unit ?? ''} × {formatBaht(it.unit_price)}</span>
                 <span className="tabular font-medium">{formatBaht(Number(it.qty) * Number(it.unit_price))}</span>
               </div>
+              {Number(it.qty_factor ?? 1) !== 1 && (
+                <div className="text-xs text-muted-foreground tabular">
+                  1 {it.unit ?? 'หน่วย'} = {formatQty(it.qty_factor)} {b?.unit ?? ''} · เทียบ BOQ = {formatQty(Number(it.qty) * Number(it.qty_factor))} {b?.unit ?? ''} ที่ {formatBaht(Number(it.unit_price) / Number(it.qty_factor))} ต่อ {b?.unit ?? 'หน่วย'}
+                </div>
+              )}
               {(it.qty_over_boq || it.price_over_threshold || b?.is_off_boq) && (
                 <div className="mt-1 text-xs">
                   {it.qty_over_boq && <span className="text-danger-fg mr-2">เกินปริมาณ BOQ</span>}
