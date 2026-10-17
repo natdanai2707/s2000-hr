@@ -52,3 +52,25 @@ export function daysBetween(fromISO: string, toISO: string): number {
   if (isNaN(a) || isNaN(b)) return 0
   return Math.round((b - a) / 86400000)
 }
+
+// ข้อความที่ผู้ใช้พิมพ์ -> รูปแบบ วว/ดด/ปปปป ใส่ / ให้อัตโนมัติระหว่างพิมพ์
+export function maskThaiDate(text: string): string {
+  const digits = text.replace(/\D/g, '').slice(0, 8)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+}
+
+// วว/ดด/ปปปป -> YYYY-MM-DD รับได้ทั้ง พ.ศ. และ ค.ศ. (ปีตั้งแต่ 2400 ถือเป็น พ.ศ.) คืน '' ถ้าไม่ใช่วันที่จริง
+export function parseThaiDate(text: string): string {
+  const m = text.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (!m) return ''
+  const day = Number(m[1])
+  const month = Number(m[2])
+  let year = Number(m[3])
+  if (year >= 2400) year -= 543
+  if (year < 1900 || year > 2200 || month < 1 || month > 12 || day < 1) return ''
+  const d = new Date(Date.UTC(year, month - 1, day))
+  if (d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return ''
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}

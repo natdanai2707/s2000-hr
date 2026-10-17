@@ -19,6 +19,7 @@ import { VatPriceInput } from './vat-price-input'
 import { SupplierCombobox } from './supplier-combobox'
 import { addVat } from '@/lib/vat'
 import { cn } from '@/lib/utils'
+import { DateInput } from './date-input'
 
 export interface PrFormItem {
   id: string
@@ -263,7 +264,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-4">
         <FormField label="วันที่ต้องการ">
-          <Input type="date" value={neededBy} onChange={e => setNeededBy(e.target.value)} />
+          <DateInput value={neededBy} onChange={setNeededBy} />
         </FormField>
         <FormField label="หมายเหตุ">
           <Textarea value={note} onChange={e => setNote(e.target.value)} />

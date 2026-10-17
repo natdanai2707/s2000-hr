@@ -12,6 +12,7 @@ import { FormField } from './common'
 import { SupplierCombobox, type SupplierValue } from './supplier-combobox'
 import { formatBaht } from '@/lib/format'
 import { todayISO } from '@/lib/date'
+import { DateInput } from './date-input'
 
 interface PoOption {
   id: string
@@ -69,11 +70,11 @@ export function InvoiceDialog({ pos, suppliers }: { pos: PoOption[]; suppliers: 
               <input type="hidden" name="supplier_id" value={supplier.id} />
               <input type="hidden" name="supplier_name" value={supplier.name} />
             </FormField>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <FormField label="เลขที่ใบแจ้งหนี้"><Input name="invoice_no" required /></FormField>
               <FormField label="จำนวนเงิน (ไม่รวม VAT)"><Input name="amount" type="number" step="0.01" min="0" inputMode="decimal" required defaultValue={po?.total_amount ?? ''} key={po?.id ?? 'amt'} /></FormField>
-              <FormField label="วันที่ใบแจ้งหนี้"><Input name="invoice_date" type="date" defaultValue={todayISO()} required /></FormField>
-              <FormField label="ครบกำหนดชำระ"><Input name="due_date" type="date" /></FormField>
+              <FormField label="วันที่ใบแจ้งหนี้"><DateInput name="invoice_date" defaultValue={todayISO()} required /></FormField>
+              <FormField label="ครบกำหนดชำระ"><DateInput name="due_date" /></FormField>
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>ยกเลิก</Button>
@@ -115,11 +116,11 @@ export function PaymentDialog({ invoiceId, invoiceNo, remaining }: { invoiceId: 
           <form onSubmit={onSubmit} className="space-y-3">
             {error && <Alert tone="danger">{error}</Alert>}
             <input type="hidden" name="invoice_id" value={invoiceId} />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <FormField label="จำนวนเงิน (ไม่รวม VAT)" hint={`คงเหลือ ${formatBaht(remaining)}`}>
                 <Input name="amount" type="number" step="0.01" min="0" inputMode="decimal" required defaultValue={remaining > 0 ? remaining.toFixed(2) : ''} />
               </FormField>
-              <FormField label="วันที่ชำระ"><Input name="paid_at" type="date" defaultValue={todayISO()} required /></FormField>
+              <FormField label="วันที่ชำระ"><DateInput name="paid_at" defaultValue={todayISO()} required /></FormField>
               <FormField label="วิธีชำระ">
                 <Select name="method" defaultValue="transfer">
                   <option value="transfer">โอนเงิน</option>

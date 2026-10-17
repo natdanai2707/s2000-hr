@@ -10,6 +10,7 @@ import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import type { Branch, Project, ProjectStatus } from '@/lib/types'
 import { PROJECT_STATUS_LABELS } from '@/lib/types'
+import { DateInput } from './date-input'
 
 export function ProjectForm({ branches, project }: { branches: Branch[]; project?: Project }) {
   const router = useRouter()
@@ -79,10 +80,10 @@ export function ProjectForm({ branches, project }: { branches: Branch[]; project
           <Input name="retention_pct" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={project?.retention_pct ?? 0} />
         </FormField>
         <FormField label="วันเริ่มงาน">
-          <Input name="start_date" type="date" defaultValue={project?.start_date ?? ''} />
+          <DateInput name="start_date" defaultValue={project?.start_date ?? ''} />
         </FormField>
         <FormField label="กำหนดเสร็จ">
-          <Input name="planned_end_date" type="date" defaultValue={project?.planned_end_date ?? ''} />
+          <DateInput name="planned_end_date" defaultValue={project?.planned_end_date ?? ''} />
         </FormField>
         <FormField label="ค่าปรับต่อวัน (บาท)">
           <Input name="penalty_per_day" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={project?.penalty_per_day ?? 0} />
