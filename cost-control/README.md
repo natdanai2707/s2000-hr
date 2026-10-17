@@ -47,6 +47,7 @@ cost-control/
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key (ผ่าน RLS) |
 | `SUPABASE_SERVICE_ROLE_KEY` | ใช้ฝั่ง server เท่านั้น: notification, cron, seed |
 | `ANTHROPIC_API_KEY` | ให้ Claude อ่านโครงไฟล์ BOQ ตอนนำเข้า ถ้าไม่ใส่ ระบบจะเดาคอลัมน์จากชื่อหัวตารางแทน |
+| `ANTHROPIC_WORKSPACE_ID` | ใส่เฉพาะเมื่อ API key เป็น key ระดับองค์กรที่ไม่ได้ผูกกับ workspace (หน้านำเข้าจะขึ้นว่า not scoped to a workspace) ค่าขึ้นต้นด้วย `wrkspc_` ดูได้ที่ Console หน้า Workspaces |
 | `SEED_USER_PASSWORD` | รหัสผ่านผู้ใช้ทดสอบตอน seed (ค่าเริ่มต้น `S2000test!`) |
 | `LINE_MESSAGING_TOKEN` | เฟส 2 ถ้าว่างระบบจะ log แทนการส่ง LINE |
 | `CRON_SECRET` | กันคนนอกเรียก `/api/cron/invoice-due` (Vercel ใส่ header ให้อัตโนมัติ) |

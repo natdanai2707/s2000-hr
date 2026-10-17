@@ -14,7 +14,10 @@ import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 
 
-const COLUMN_KEYS: BoqColumnKey[] = ['item_no', 'description', 'unit', 'qty', 'material_price', 'labor_price', 'total', 'markup_pct', 'material_total', 'labor_total', 'unit_rate']
+const COLUMN_KEYS: BoqColumnKey[] = [
+  'item_no', 'description', 'unit', 'qty', 'material_price', 'labor_price', 'total', 'markup_pct',
+  'material_cost', 'labor_cost', 'material_total', 'labor_total', 'unit_rate', 'material_cost_total', 'labor_cost_total',
+]
 
 export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentContract }: { projectId: string; hasConfirmed: boolean; initialType: BoqVersionType; currentContract: number }) {
   const router = useRouter()
@@ -169,6 +172,7 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentC
                     {sheet.item_count > 0 ? (
                       <span className="text-foreground">
                         แตกได้ {sheet.section_count} หมวด {sheet.item_count} รายการ ต้นทุนรวม {formatBaht(sheet.cost_total)} บาท
+                        {sheet.cost_mode && ` · ราคาขายรวม ${formatBaht(sheet.sell_total)} บาท`}
                         {edited[sheet.name] && <span className="text-muted-foreground"> (คำนวณใหม่หลังนำเข้า)</span>}
                       </span>
                     ) : (
@@ -234,6 +238,14 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentC
               {sheet.ai_warnings.length > 0 && include[sheet.name] && (
                 <Alert tone="info">
                   ข้อสังเกตจากการอ่านไฟล์: {sheet.ai_warnings.join(' · ')}
+                </Alert>
+              )}
+              {sheet.cost_mode && include[sheet.name] && (
+                <Alert tone="info">
+                  ไฟล์นี้มีคอลัมน์ต้นทุนที่ผู้ประมาณราคาทดไว้ ระบบใช้เป็นงบต้นทุน และใช้ราคาวัสดุและค่าแรงในตาราง BOQ เป็นราคาขาย
+                  ถ้าสั่งซื้อแพงกว่าต้นทุนนี้ ระบบจะเตือนในหน้าบันทึกการสั่งซื้อ
+                  {sheet.missing_cost_items > 0 && ` มี ${sheet.missing_cost_items} รายการที่ไม่มีต้นทุนในไฟล์ ระบบใช้ราคาขายเป็นต้นทุนแทน ควรตรวจในหน้าเวอร์ชัน`}
+                  {' '}ถ้าไม่ต้องการ ให้เลือก ไม่มี ที่ช่องต้นทุนวัสดุต่อหน่วยและต้นทุนค่าแรงต่อหน่วย
                 </Alert>
               )}
               {sheet.ai_status === 'off' && include[sheet.name] && (

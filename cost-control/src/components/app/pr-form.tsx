@@ -217,7 +217,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
                 {ev.qtyOverBoq && <div className="text-danger-fg font-medium text-center">เกิน BOQ {formatQty(ev.qtyOverBy)} {item.unit ?? 'หน่วย'}</div>}
                 {!item.is_off_boq && (
                   <div className="grid grid-cols-3 gap-1 text-center border-t border-border pt-2">
-                    <div><div className="text-xs text-muted-foreground">ราคาทด (ไม่รวม VAT)</div><div className="tabular">{formatBaht(item.unit_cost)}</div></div>
+                    <div><div className="text-xs text-muted-foreground">ต้นทุนที่ทด (ไม่รวม VAT)</div><div className="tabular">{formatBaht(item.unit_cost)}</div></div>
                     <div><div className="text-xs text-muted-foreground">ราคาครั้งนี้ (ไม่รวม VAT)</div><div className="tabular">{formatBaht(Number(line.unit_price) || 0)}</div></div>
                     <div>
                       <div className="text-xs text-muted-foreground">ส่วนต่าง</div>
@@ -227,7 +227,13 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
                     </div>
                   </div>
                 )}
-                {ev.priceOverThreshold && <div className="text-danger-fg font-medium text-center">แพงกว่าราคาที่ทดไว้เกิน {settings.price_variance_threshold_pct}%</div>}
+                {ev.priceOverThreshold && <div className="text-danger-fg font-medium text-center">แพงกว่าต้นทุนที่ทดไว้เกิน {settings.price_variance_threshold_pct}%</div>}
+                {/* แพงกว่าต้นทุนแม้ไม่ถึงเกณฑ์ก็ต้องเห็น ยอดเกินเล็กๆ หลายรายการรวมกันทำให้กำไรหายได้ */}
+                {!item.is_off_boq && !ev.priceOverThreshold && ev.priceDiff > 0 && (
+                  <div className="text-warning-fg font-medium text-center">
+                    แพงกว่าต้นทุนที่ทดไว้ {formatBaht(ev.priceDiff)} บาทต่อหน่วย รวม {formatBaht(ev.priceDiff * (Number(line.qty) || 0))} บาท
+                  </div>
+                )}
                 <div className="text-right text-xs text-muted-foreground tabular">
                   รวม {formatBaht(ev.amount)} บาท (ไม่รวม VAT) · {formatBaht(addVat(ev.amount))} บาท (รวม VAT)
                 </div>

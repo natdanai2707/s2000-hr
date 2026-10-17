@@ -16,7 +16,7 @@ const analysis = {
   header_row: 1,
   header_row_count: 1,
   data_start_row: 2,
-  columns: { item_no: null, description: 0, unit: 2, qty: 1, material_price: 3, labor_price: null, total: 4, markup_pct: null, material_total: null, labor_total: null, unit_rate: null },
+  columns: { item_no: null, description: 0, unit: 2, qty: 1, material_price: 3, labor_price: null, total: 4, markup_pct: null, material_total: null, labor_total: null, unit_rate: null, material_cost: null, labor_cost: null, material_cost_total: null, labor_cost_total: null },
   summary_rows: [{ row: 4, kind: 'sub_total' }],
   contract_value_cell: { row: 4, column: 4, includes_vat: false },
   confidence: 'high',
@@ -83,6 +83,19 @@ describe('เรียก Claude อ่านโครงชีต', () => {
     reply = { status: 400, body: { type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low' } } }
     const out = await analyzeSheet('BOQ', grid)
     expect(out.status === 'failed' && out.reason).toContain('credit balance is too low')
+  })
+
+  it('key ระดับองค์กร: ตั้ง ANTHROPIC_WORKSPACE_ID แล้วส่ง header workspace ไปทุกคำขอ', async () => {
+    reply = { status: 200, body: message(JSON.stringify(analysis)) }
+    process.env.ANTHROPIC_WORKSPACE_ID = 'wrkspc_test'
+    try {
+      await analyzeSheet('BOQ', grid)
+      expect(last!.headers['anthropic-workspace-id']).toBe('wrkspc_test')
+    } finally {
+      delete process.env.ANTHROPIC_WORKSPACE_ID
+    }
+    await analyzeSheet('BOQ', grid)
+    expect(last!.headers['anthropic-workspace-id']).toBeUndefined()
   })
 
   it('API ตอบ key ผิด บอกสาเหตุให้ผู้ใช้เห็น', async () => {

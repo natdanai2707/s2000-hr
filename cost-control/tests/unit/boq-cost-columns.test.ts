@@ -1,0 +1,58 @@
+import { describe, it, expect } from 'vitest'
+import { chooseLayout } from '@/lib/boq/choose'
+import { detectCostColumns, splitRows } from '@/lib/boq/split'
+import { verifySheet } from '@/lib/boq/verify'
+
+// BOQ แบบ S-2000 ที่มีคอลัมน์ต้นทุนของผู้ประมาณราคาอยู่ด้านขวา (L ถึง O)
+// หัวคอลัมน์ต้นทุนอยู่ในแถวหัวหมวด ไม่ใช่แถวหัวตาราง (ข้อมูลสมมติ)
+function grid(): unknown[][] {
+  return [
+    ['ITEMS', 'DESCRIPTION', "Q'TY", 'UNIT', 'MATERIAL', 'MATERIAL', 'LABOUR', 'LABOUR', 'UNIT RATE', 'TOTAL', 'REMARK'],
+    ['ITEMS', 'DESCRIPTION', "Q'TY", 'UNIT', '@', 'SUB TOTAL', '@', 'SUB TOTAL', 'UNIT RATE', 'TOTAL', 'REMARK'],
+    ['1', 'งานรางน้ำ', '', '', '', '', '', '', '', '', '', 'ต้นทุนวัสดุ /หน่วย', 'ต้นทุนวัสดุ รวม', 'ต้นทุนค่าแรง/หน่วย', 'ต้นทุนค่าแรงรวม'],
+    ['', 'แผ่นสแตนเลส', 10, 'pcs.', 3100, 31000, '', '', 3100, 31000, '', 2794.39, 27943.9, '', ''],
+    ['', 'ค่าพับ', 5, 'pcs.', '', '', 320, 1600, 320, 1600, '', '', '', 280, 1400],
+    ['', 'น็อต', 100, 'ตัว', 5, 500, '', '', 5, 500, '', '', '', '', ''],
+    ['', '', '', '', '', '', '', '', 'Total งานรางน้ำ', 33100, '', '', 27943.9, '', 1400],
+  ]
+}
+
+describe('คอลัมน์ต้นทุนของผู้ประมาณราคา', () => {
+  it('หาคอลัมน์ต้นทุนเจอแม้หัวคอลัมน์อยู่ในแถวหัวหมวด', () => {
+    expect(detectCostColumns(grid())).toEqual({ material_cost: 11, material_cost_total: 12, labor_cost: 13, labor_cost_total: 14 })
+  })
+
+  it('งบใช้ต้นทุนจากคอลัมน์ต้นทุน ราคาในตาราง BOQ เป็นราคาขาย', () => {
+    const r = chooseLayout('BOQ', grid(), null, null)
+    expect(r.split.cost_mode).toBe(true)
+    const sheet = r.split.items.find(i => i.description === 'แผ่นสแตนเลส')!
+    expect(sheet).toMatchObject({ category: 'material', unit_cost: 2794.39, sell_unit_price: 3100 })
+    expect(sheet.markup_pct).toBeCloseTo(10.94, 2)
+    const fold = r.split.items.find(i => i.description === 'ค่าพับ')!
+    expect(fold).toMatchObject({ category: 'labor', unit_cost: 280, sell_unit_price: 320 })
+  })
+
+  it('บรรทัดที่ไม่มีต้นทุนในไฟล์ ใช้ราคาขายเป็นต้นทุน และนับไว้เตือน', () => {
+    const r = chooseLayout('BOQ', grid(), null, null)
+    expect(r.split.missing_cost_items).toBe(1)
+    expect(r.split.items.find(i => i.description === 'น็อต')).toMatchObject({ unit_cost: 5, sell_unit_price: 5 })
+  })
+
+  it('ผู้ใช้ปิดคอลัมน์ต้นทุนได้ กลับไปใช้ราคาในตารางเป็นต้นทุนเหมือนเดิม', () => {
+    const r = chooseLayout('BOQ', grid(), null, null)
+    const off = splitRows(r.preview.rows, { ...r.mapping, material_cost: null, labor_cost: null }, 0)
+    expect(off.cost_mode).toBe(false)
+    expect(off.items.find(i => i.description === 'แผ่นสแตนเลส')?.unit_cost).toBe(3100)
+  })
+
+  it('ตรวจตัวเลขในคอลัมน์ต้นทุน ทั้งรายบรรทัดและยอดรวมหมวด', () => {
+    const r = chooseLayout('BOQ', grid(), null, null)
+    expect(verifySheet(grid(), r.layout, r.mapping).issues).toEqual([])
+
+    const g = grid()
+    g[3][12] = 29000
+    const issues = verifySheet(g, r.layout, r.mapping).issues
+    expect(issues.map(i => i.row)).toEqual([4, 7])
+    expect(issues[0].message).toContain('ต้นทุนวัสดุรวม 29,000.00')
+  })
+})
