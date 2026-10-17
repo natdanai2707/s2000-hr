@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import { todayISO } from '@/lib/date'
+import { DateInput } from './date-input'
 
 interface Item {
   id: string
@@ -92,8 +93,8 @@ export function ExpenseForm({ projects, initialProjectId }: { projects: Project[
           <Textarea name="variance_reason" required />
         </FormField>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <FormField label="วันที่"><Input name="expense_date" type="date" defaultValue={todayISO()} required /></FormField>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FormField label="วันที่"><DateInput name="expense_date" defaultValue={todayISO()} required /></FormField>
         <FormField label="จำนวนเงิน (ไม่รวม VAT)" hint="มีใบกำกับภาษี กรอกยอดก่อน VAT ถ้าไม่มี VAT กรอกยอดที่จ่ายจริง"><Input name="amount" type="number" step="0.01" min="0" inputMode="decimal" required /></FormField>
       </div>
       <FormField label="รายละเอียด"><Input name="description" required placeholder="เช่น ค่าน้ำมันรถขนเหล็ก" /></FormField>
