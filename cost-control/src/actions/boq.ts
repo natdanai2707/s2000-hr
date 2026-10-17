@@ -337,13 +337,16 @@ export interface BoqItemInput {
   qty: number
   unit_cost: number
   category: string
-  markup_pct: number
+  // ราคาขายต่อหน่วย (ไม่รวม VAT) ผู้ใช้กรอกตรง markup คำนวณจากราคาขายเทียบต้นทุน
+  sell_unit_price: number
 }
 
 export async function saveBoqItem(versionId: string, projectId: string, itemId: string | null, input: BoqItemInput): Promise<ActionResult> {
   const user = await requireUser()
   const supabase = await createClient()
-  const sell = Math.round(input.unit_cost * (1 + input.markup_pct / 100) * 100) / 100
+  const sell = Math.round(input.sell_unit_price * 100) / 100
+  // markup เก็บไว้ดูเท่านั้น คอลัมน์รับได้ไม่เกิน ±9,999.99%
+  const markup = input.unit_cost > 0 ? Math.max(-9999.99, Math.min(9999.99, Math.round((sell / input.unit_cost - 1) * 10000) / 100)) : 0
   const row = {
     section_id: input.section_id,
     item_no: input.item_no || null,
@@ -352,7 +355,7 @@ export async function saveBoqItem(versionId: string, projectId: string, itemId: 
     qty: input.qty,
     unit_cost: input.unit_cost,
     category: input.category,
-    markup_pct: input.markup_pct,
+    markup_pct: markup,
     sell_unit_price: sell,
   }
   if (!input.description) return fail('กรุณากรอกรายละเอียด')
