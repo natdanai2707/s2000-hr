@@ -4,6 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader, EmptyState } from '@/components/app/common'
 import { PrForm, type PrFormProject } from '@/components/app/pr-form'
 
+// การอ่านรูปใบสั่งซื้อด้วย Claude ใช้เวลา จึงขยายเวลาสูงสุดของฟังก์ชันนี้
+export const maxDuration = 300
+
 export default async function NewPrPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const user = await requireUser()
   const { project } = await searchParams

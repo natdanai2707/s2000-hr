@@ -224,6 +224,13 @@ export async function importBoq(
     const sectionIds = (secRows ?? []).map(r => r.id)
     sectionOffset += sectionsToInsert.length
 
+    // ตัวเลขที่ใหญ่เกินช่องเก็บในฐานข้อมูล บอกชื่อรายการให้ผู้ใช้ไปแก้ไฟล์ แทนข้อความ numeric field overflow
+    const tooBig = result.items.find(it => Math.abs(it.qty) >= 1e11 || Math.abs(it.unit_cost) >= 1e12 || Math.abs(it.sell_unit_price) >= 1e12)
+    if (tooBig) {
+      if (type !== 'variation_order') await supabase.from('boq_versions').delete().eq('id', versionId)
+      return fail(`ชีต ${sheet.name} รายการ "${tooBig.description.slice(0, 60)}" มีปริมาณหรือราคาใหญ่ผิดปกติ ตรวจการจับคู่คอลัมน์ หรือแก้ตัวเลขในไฟล์`)
+    }
+
     const rows = result.items.map(it => ({
       boq_version_id: versionId,
       section_id: result.sections.length > 0 ? (it.section_index === null ? null : sectionIds[it.section_index]) : sectionIds[0],
@@ -241,7 +248,12 @@ export async function importBoq(
     itemOffset += result.items.length
     totalItems += result.items.length
     const { error: itemErr } = await supabase.from('boq_items').insert(rows)
-    if (itemErr) return fail(itemErr)
+    if (itemErr) {
+      // นำเข้าไม่สำเร็จ ไม่ทิ้งเวอร์ชันร่างครึ่งๆ ไว้ (ร่าง VO อาจมีงานที่แก้ไว้ก่อน จึงไม่ลบ)
+      if (type !== 'variation_order') await supabase.from('boq_versions').delete().eq('id', versionId)
+      if (itemErr.code === '22003') return fail(`ชีต ${sheet.name} มีตัวเลขใหญ่เกินช่องเก็บ ตรวจการจับคู่คอลัมน์ปริมาณและราคา`)
+      return fail(itemErr)
+    }
 
     // บันทึก template ตามชื่อชีต ครั้งถัดไปนำเข้าอัตโนมัติ
     await supabase

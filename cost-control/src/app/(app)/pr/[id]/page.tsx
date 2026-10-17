@@ -9,6 +9,7 @@ import { formatBaht, formatQty, toNumber } from '@/lib/format'
 import { addVat, VAT_RATE_PCT } from '@/lib/vat'
 import { formatThaiDate, formatThaiDateTime } from '@/lib/date'
 import { PrDecision } from '@/components/app/pr-decision'
+import { AttachmentLink } from '@/components/app/attachment-link'
 import { VoidDirectPurchase, RecordApprovedAsDirect } from '@/components/app/void-direct-purchase'
 
 export default async function PrDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -52,6 +53,7 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
         <StatusBadge kind="pr" status={pr.status} />
         {pr.requires_management && <span className="text-xs text-muted-foreground">ต้องผ่านฝ่ายบริหาร</span>}
         {po && <Link href={`/po/${po.id}`} className="text-xs underline">ใบสั่งซื้อ {po.po_no}</Link>}
+        {pr.attachment_path && <AttachmentLink path={pr.attachment_path} label="เอกสารแนบ" />}
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4 text-sm grid grid-cols-2 gap-3 mb-4">

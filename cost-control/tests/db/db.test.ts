@@ -516,6 +516,13 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     })).rejects.toThrow(/check constraint/)
   })
 
+  it('แนบไฟล์เอกสารจัดซื้อไว้กับรายการสั่งซื้อได้', async () => {
+    const path = `projects/${projectA}/purchases/test.jpg`
+    const id = await runAs(client, engA, async q =>
+      (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, attachment_path, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $3, $2) returning id`, [projectA, engA, path])).rows[0].id)
+    expect((await client.query(`select attachment_path from public.purchase_requests where id = $1`, [id])).rows[0].attachment_path).toBe(path)
+  })
+
   it('ยกเลิกการยืนยัน BOQ ได้เมื่อโครงการยังไม่มีเอกสารต้นทุน แล้วกลับมาแก้ตัวเลขได้', async () => {
     const vB = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectB])).rows[0].id
     const itemB = (await client.query(`select id from public.boq_items where boq_version_id = $1 and not is_off_boq`, [vB])).rows[0].id

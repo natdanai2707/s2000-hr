@@ -16,6 +16,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import { VatPriceInput } from './vat-price-input'
+import { PurchaseDocumentReader } from './purchase-document-reader'
+import type { PurchaseDocumentResult } from '@/actions/purchase-requests'
+import { formatThaiDate } from '@/lib/date'
 import { suggestConversion, toBoqUnits } from '@/lib/units'
 import { SupplierCombobox } from './supplier-combobox'
 import { addVat } from '@/lib/vat'
@@ -52,10 +55,13 @@ interface Line {
   buy_other: boolean
   buy_unit: string
   factor: string
+  // มาจากเอกสารที่ Claude อ่าน แสดงให้ผู้ใช้เทียบตอนเลือกรายการ BOQ
+  doc_text: string
+  doc_note: string
 }
 
 function newLine(): Line {
-  return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '', buy_other: false, buy_unit: '', factor: '' }
+  return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '', buy_other: false, buy_unit: '', factor: '', doc_text: '', doc_note: '' }
 }
 
 function lineFactor(l: Line): number {
@@ -76,6 +82,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null)
+  const [attachmentPath, setAttachmentPath] = useState<string | null>(null)
   const online = useOnline()
 
   const project = projects.find(p => p.id === projectId)
@@ -121,6 +128,34 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
     })
   }
 
+  // กรอกรายการจากเอกสารที่ Claude อ่าน แทนบรรทัดว่าง และต่อท้ายบรรทัดที่กรอกไว้แล้ว
+  function applyDocument(r: PurchaseDocumentResult) {
+    setAttachmentPath(r.attachment_path)
+    if (r.lines.length === 0) return
+    const norm = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase()
+    const sup = r.supplier_name ? suppliers.find(x => norm(x.name) === norm(r.supplier_name!)) : undefined
+    const fromDoc: Line[] = r.lines.map(rl => {
+      const item = items.find(i => i.id === rl.boq_item_id)
+      const differ = rl.qty_factor !== 1
+      return {
+        ...newLine(),
+        boq_item_id: item?.id ?? '',
+        qty: rl.qty !== null ? String(rl.qty) : '',
+        unit_price: rl.unit_price !== null ? String(rl.unit_price) : '',
+        supplier_id: sup?.id ?? '',
+        supplier_name: sup?.name ?? r.supplier_name ?? '',
+        buy_other: !!item && differ,
+        buy_unit: differ ? rl.unit ?? '' : '',
+        factor: differ && rl.qty_factor ? String(rl.qty_factor) : '',
+        doc_text: `${rl.description}${rl.qty !== null ? ` · ${rl.qty} ${rl.unit ?? ''}` : ''}`,
+        doc_note: rl.note ?? '',
+      }
+    })
+    setLines(ls => [...ls.filter(l => l.boq_item_id || l.qty || l.unit_price), ...fromDoc])
+    const ref = [r.document_no && `เลขที่ ${r.document_no}`, r.document_date && `วันที่ ${formatThaiDate(r.document_date)}`].filter(Boolean).join(' ')
+    if (ref) setNote(n => (n ? `${n}\n` : '') + `จากเอกสาร ${ref}`)
+  }
+
   function update(key: string, patch: Partial<Line>) {
     setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)))
   }
@@ -151,7 +186,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
         variance_reason: e.line.variance_reason.trim() || null,
       })
     }
-    return { client_ref: newClientRef(), project_id: projectId, needed_by_date: null, note: note.trim() || null, lines: payloadLines }
+    return { client_ref: newClientRef(), project_id: projectId, needed_by_date: null, note: note.trim() || null, attachment_path: attachmentPath, lines: payloadLines }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -203,6 +238,8 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
         </FormField>
       </div>
 
+      {projectId && online && <PurchaseDocumentReader key={projectId} projectId={projectId} onRead={applyDocument} />}
+
       {evaluated.map(({ line, item, ev, boq }, idx) => {
         const q = line.search.trim().toLowerCase()
         const matches = q && !item ? items.filter(i => `${i.item_no ?? ''} ${i.description} ${i.unit ?? ''}`.toLowerCase().includes(q)).slice(0, 12) : []
@@ -213,6 +250,12 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
               {lines.length > 1 && <Button type="button" size="sm" variant="ghost" onClick={() => setLines(ls => ls.filter(l => l.key !== line.key))}>ลบ</Button>}
             </div>
 
+            {line.doc_text && (
+              <div className="rounded-lg bg-muted/60 px-3 py-2 text-xs">
+                <div><span className="text-muted-foreground">จากเอกสาร: </span>{line.doc_text}</div>
+                {line.doc_note && <div className="text-muted-foreground mt-0.5">{line.doc_note}</div>}
+              </div>
+            )}
             <FormField label="รายการ BOQ" hint={!item ? 'พิมพ์ลำดับหรือชื่อรายการเพื่อค้นหา' : undefined}>
               {item ? (
                 <div className="flex items-start justify-between gap-2 rounded-lg border border-border bg-muted px-3 py-2">
