@@ -1,17 +1,19 @@
 import 'server-only'
 import Anthropic from '@anthropic-ai/sdk'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
+import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
-import type { ColumnMapping } from './split'
+import { cellNumber, cellText, type ColumnMapping } from './split'
 import type { SheetLayout } from './layout'
+import type { AiCell, SummaryKind } from './verify'
 
 // ให้ Claude อ่านตารางแล้วบอกว่าคอลัมน์ไหนคืออะไร แทนการจับคู่ชื่อคอลัมน์ด้วยกฎตายตัว
 // เหตุผล: BOQ จริงมาจากผู้ประมาณราคาหลายคน หัวคอลัมน์สะกดไม่เหมือนกัน พิมพ์ผิด
 // สลับภาษาไทยอังกฤษ หรือใช้คำที่ไม่เคยเจอ กฎตายตัวพลาดแล้วนำเข้าไม่ได้ทั้งไฟล์
 //
-// สำคัญ: Claude ตัดสินแค่ว่าคอลัมน์ไหนคืออะไร ไม่เคยแตะตัวเลข
-// การคำนวณทั้งหมดยังทำด้วยโค้ดใน splitRows เหมือนเดิม ไฟล์เดิมจึงให้ผลเดิมทุกครั้ง
-// และผู้ใช้ยังตรวจการจับคู่คอลัมน์ได้ก่อนกดนำเข้าจริง
+// สำคัญ: Claude ตัดสินแค่ว่าคอลัมน์ไหนคืออะไร แถวไหนเป็นยอดรวมแบบไหน และเซลล์ไหนคือมูลค่าสัญญา
+// Claude ไม่เคยคำนวณหรือพิมพ์ตัวเลขเงินเอง ตัวเลขทุกตัวอ่านจากเซลล์ในไฟล์ และการคำนวณ
+// รวมถึงการตรวจว่าไฟล์คูณบวกถูกหรือไม่ ทำด้วยโค้ดใน splitRows และ verifySheet
+// ไฟล์เดิมจึงให้ผลเดิมทุกครั้ง และผู้ใช้ยังตรวจการจับคู่คอลัมน์ได้ก่อนกดนำเข้าจริง
 
 const ColumnIndex = z.number().int().min(0).nullable()
 
@@ -37,10 +39,33 @@ const AnalysisSchema = z.object({
     material_price: ColumnIndex.describe('ราคาวัสดุต่อหนึ่งหน่วย ห้ามเอาคอลัมน์ยอดรวมของบรรทัด'),
     labor_price: ColumnIndex.describe('ค่าแรงต่อหนึ่งหน่วย ห้ามเอาคอลัมน์ยอดรวมของบรรทัด'),
     total: ColumnIndex.describe('ยอดรวมเงินของบรรทัด'),
+    material_total: ColumnIndex.describe('ยอดรวมค่าวัสดุของบรรทัด (ปริมาณ × ราคาวัสดุต่อหน่วย) ใช้ตรวจตัวเลข'),
+    labor_total: ColumnIndex.describe('ยอดรวมค่าแรงของบรรทัด (ปริมาณ × ค่าแรงต่อหน่วย) ใช้ตรวจตัวเลข'),
+    unit_rate: ColumnIndex.describe('ราคาต่อหน่วยรวม (วัสดุ + ค่าแรง ต่อหนึ่งหน่วย) ใช้ตรวจตัวเลข'),
     markup_pct: ColumnIndex.describe(
       'คอลัมน์เปอร์เซ็นต์กำไรหรือ markup เท่านั้น ถ้าเป็นคอลัมน์ราคาที่บังเอิญมีเครื่องหมายเปอร์เซ็นต์ในชื่อ ให้เป็น null'
     ),
   }),
+  summary_rows: z
+    .array(
+      z.object({
+        row: z.number().int().min(1),
+        kind: z.enum(['section_total', 'group_total', 'sub_total', 'overhead', 'discount', 'total', 'vat', 'grand_total']),
+      })
+    )
+    .describe(
+      'ทุกแถวที่เป็นยอดรวม: section_total ยอดรวมหมวดย่อย, group_total ยอดรวมหมวดใหญ่ที่รวมหลายหมวดย่อย, sub_total ยอดรวมก่อนค่าดำเนินการ, overhead ค่าดำเนินการหรือกำไร, discount ส่วนลด, total ยอดรวมหลังบวกลบ, vat ภาษีมูลค่าเพิ่ม, grand_total ยอดรวมที่รวม VAT แล้ว'
+    ),
+  contract_value_cell: z
+    .object({
+      row: z.number().int().min(1),
+      column: z.number().int().min(0),
+      includes_vat: z.boolean().describe('true ถ้ายอดในเซลล์นี้รวม VAT แล้ว'),
+    })
+    .nullable()
+    .describe(
+      'เซลล์ที่เป็นมูลค่างานทั้งหมดที่เสนอลูกค้า หลังหักส่วนลด ควรเป็นยอดก่อน VAT ถ้าในชีตมี ถ้าชีตนี้ไม่มียอดแบบนี้ ให้ null'
+    ),
   confidence: z.enum(['high', 'medium', 'low']),
   warnings: z
     .array(z.string())
@@ -56,7 +81,12 @@ export interface AnalyzeResult {
   sheet_kind: SheetAnalysis['sheet_kind']
   confidence: SheetAnalysis['confidence']
   warnings: string[]
+  roles: Map<number, SummaryKind>
+  contract_cell: AiCell | null
 }
+
+// off = ไม่ได้ตั้ง ANTHROPIC_API_KEY, failed = ตั้งแล้วแต่เรียกไม่สำเร็จ (ให้ผู้ใช้เห็นสาเหตุจริง)
+export type AnalyzeOutcome = { status: 'ok'; result: AnalyzeResult } | { status: 'off' } | { status: 'failed'; reason: string }
 
 const SYSTEM = `คุณคือผู้ช่วยอ่านไฟล์ BOQ (Bill of Quantities) ของผู้รับเหมาก่อสร้างไทย
 
@@ -78,20 +108,40 @@ const SYSTEM = `คุณคือผู้ช่วยอ่านไฟล์ 
 5. ชีตที่เป็นปกหรือใบเสนอราคาสรุปที่มีแต่ยอดรวมก้อนเดียว ให้ is_boq_detail_sheet เป็น false
    เพราะถ้านำเข้าพร้อมชีตรายละเอียดจะนับต้นทุนซ้ำ
 6. เลขคอลัมน์ที่ตอบเป็นแบบเริ่มที่ 0 ตามที่แสดงในข้อมูล เลขแถวเป็นแบบเริ่มที่ 1
-7. คอลัมน์ไหนไม่มีในชีต ให้ตอบ null อย่าเดา`
+7. คอลัมน์ไหนไม่มีในชีต ให้ตอบ null อย่าเดา
+8. summary_rows ให้ระบุทุกแถวยอดรวมที่เห็น ทั้งในบล็อกสรุปด้านบนและท้ายหมวด
+   ข้อมูลอาจตัดช่วงกลางชีตออก แต่แถวที่มีคำว่ารวม total vat ส่วนลด ถูกส่งมาให้ครบพร้อมเลขแถวจริง
+9. contract_value_cell คือยอดที่ลูกค้าต้องจ่ายสำหรับงานนี้ทั้งหมด หลังหักส่วนลด
+   ในใบเสนอราคามักอยู่บรรทัดก่อน VAT ใน BOQ มักเป็นบรรทัด Total หลัง Overhead & Profit
+   ห้ามเลือกยอดที่รวม VAT ถ้ามียอดก่อน VAT ให้เลือก และห้ามพิมพ์ตัวเลขเอง ให้ชี้เซลล์เท่านั้น`
 
-function gridToText(grid: unknown[][], maxRows: number, maxCols: number): string {
+// แสดงค่าในเซลล์เป็นข้อความ เซลล์สูตรต้องแสดงผลลัพธ์ ไม่ใช่ [object Object]
+function cellDisplay(v: unknown): string {
+  const n = cellNumber(v)
+  if (n !== null) return String(Math.round(n * 100) / 100)
+  return cellText(v).replace(/\s+/g, ' ').slice(0, 60)
+}
+
+const TOTALISH_RE = /(total|รวม|vat|ภาษี|ส่วนลด|discount|overhead|กำไร)/i
+
+// ส่งแถวต้นชีตตาม maxRows และแถวยอดรวมทุกแถวจากส่วนที่เหลือ เพื่อให้ Claude เห็นสายยอดสรุปท้ายชีต
+export function gridToText(grid: unknown[][], maxRows: number, maxCols: number): string {
   const lines: string[] = []
   const header = Array.from({ length: maxCols }, (_, c) => `c${c}`).join(' | ')
   lines.push(`แถว | ${header}`)
-  for (let r = 0; r < Math.min(grid.length, maxRows); r++) {
+  let skipped = false
+  for (let r = 0; r < grid.length; r++) {
     const cells: string[] = []
-    for (let c = 0; c < maxCols; c++) {
-      const v = grid[r]?.[c]
-      const text = v === null || v === undefined ? '' : String(v).replace(/\s+/g, ' ').slice(0, 60)
-      cells.push(text)
-    }
+    for (let c = 0; c < maxCols; c++) cells.push(cellDisplay(grid[r]?.[c]))
     if (cells.every(x => x === '')) continue
+    if (r >= maxRows && !cells.some(x => TOTALISH_RE.test(x))) {
+      skipped = true
+      continue
+    }
+    if (skipped) {
+      lines.push('... (ตัดแถวรายการช่วงนี้ออก)')
+      skipped = false
+    }
     lines.push(`r${r + 1} | ${cells.join(' | ')}`)
   }
   return lines.join('\n')
@@ -101,22 +151,24 @@ export function analysisEnabled(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY)
 }
 
-// วิเคราะห์หนึ่งชีต คืน null ถ้าไม่ได้ตั้งค่า API key หรือเรียกไม่สำเร็จ
-// ผู้เรียกต้องมีทางสำรองแบบกฎตายตัวเสมอ ระบบต้องนำเข้าได้แม้ไม่มี API
-export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promise<AnalyzeResult | null> {
-  if (!analysisEnabled()) return null
+// วิเคราะห์หนึ่งชีต ผู้เรียกต้องมีทางสำรองแบบกฎตายตัวเสมอ ระบบต้องนำเข้าได้แม้ไม่มี API
+export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promise<AnalyzeOutcome> {
+  if (!analysisEnabled()) return { status: 'off' }
   const maxCols = Math.min(Math.max(...grid.slice(0, 60).map(r => r.length), 1), 16)
   const table = gridToText(grid, 45, maxCols)
 
   try {
     const client = new Anthropic()
-    const response = await client.messages.parse({
+    const response = await client.beta.messages.parse({
       model: 'claude-opus-5-5',
       max_tokens: 16000,
       system: SYSTEM,
+      // ถ้าตัวกรองความปลอดภัยปฏิเสธ ให้ API ส่งต่อไปโมเดลสำรองที่เหมาะสมเอง
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
       output_config: {
         effort: 'medium',
-        format: zodOutputFormat(AnalysisSchema),
+        format: betaZodOutputFormat(AnalysisSchema),
       },
       messages: [
         {
@@ -126,32 +178,46 @@ export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promis
       ],
     })
 
+    if (response.stop_reason === 'refusal') return { status: 'failed', reason: 'Claude ปฏิเสธการอ่านชีตนี้' }
+    if (response.stop_reason === 'max_tokens') return { status: 'failed', reason: 'คำตอบยาวเกินกำหนด' }
     const parsed = response.parsed_output
-    if (!parsed) return null
+    if (!parsed) return { status: 'failed', reason: 'อ่านคำตอบไม่ได้' }
 
     const headerRows: 1 | 2 = parsed.header_row_count === 2 ? 2 : 1
     const headerRow = Math.max(1, parsed.header_row)
     const dataStart = Math.max(headerRow + headerRows, parsed.data_start_row)
 
     return {
-      mapping: {
-        item_no: parsed.columns.item_no ?? null,
-        description: parsed.columns.description ?? null,
-        unit: parsed.columns.unit ?? null,
-        qty: parsed.columns.qty ?? null,
-        material_price: parsed.columns.material_price ?? null,
-        labor_price: parsed.columns.labor_price ?? null,
-        total: parsed.columns.total ?? null,
-        markup_pct: parsed.columns.markup_pct ?? null,
+      status: 'ok',
+      result: {
+        mapping: {
+          item_no: parsed.columns.item_no ?? null,
+          description: parsed.columns.description ?? null,
+          unit: parsed.columns.unit ?? null,
+          qty: parsed.columns.qty ?? null,
+          material_price: parsed.columns.material_price ?? null,
+          labor_price: parsed.columns.labor_price ?? null,
+          total: parsed.columns.total ?? null,
+          markup_pct: parsed.columns.markup_pct ?? null,
+          material_total: parsed.columns.material_total ?? null,
+          labor_total: parsed.columns.labor_total ?? null,
+          unit_rate: parsed.columns.unit_rate ?? null,
+        },
+        layout: { header_row: headerRow, header_rows: headerRows, data_start_row: dataStart },
+        is_boq_detail_sheet: parsed.is_boq_detail_sheet,
+        sheet_kind: parsed.sheet_kind,
+        confidence: parsed.confidence,
+        warnings: parsed.warnings.slice(0, 4),
+        roles: new Map(parsed.summary_rows.map(r => [r.row, r.kind])),
+        contract_cell: parsed.contract_value_cell,
       },
-      layout: { header_row: headerRow, header_rows: headerRows, data_start_row: dataStart },
-      is_boq_detail_sheet: parsed.is_boq_detail_sheet,
-      sheet_kind: parsed.sheet_kind,
-      confidence: parsed.confidence,
-      warnings: parsed.warnings.slice(0, 4),
     }
   } catch (e) {
     console.error(`วิเคราะห์ชีต ${sheetName} ไม่สำเร็จ ใช้การตรวจจับแบบกฎแทน:`, e)
-    return null
+    if (e instanceof Anthropic.AuthenticationError) return { status: 'failed', reason: 'API key ไม่ถูกต้อง' }
+    if (e instanceof Anthropic.PermissionDeniedError) return { status: 'failed', reason: 'API key ไม่มีสิทธิ์ใช้งานโมเดลนี้' }
+    if (e instanceof Anthropic.RateLimitError) return { status: 'failed', reason: 'เรียกใช้บ่อยเกินไปหรือเครดิตหมด' }
+    if (e instanceof Anthropic.APIError) return { status: 'failed', reason: `API ตอบกลับ ${e.status ?? 'ผิดพลาด'}` }
+    return { status: 'failed', reason: 'เชื่อมต่อ API ไม่ได้' }
   }
 }

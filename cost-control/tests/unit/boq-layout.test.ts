@@ -75,11 +75,11 @@ describe('template ที่บันทึกไว้', () => {
 })
 
 describe('ทางสำรองเมื่อยังไม่ได้ตั้งค่า API', () => {
-  it('ไม่มี ANTHROPIC_API_KEY ถือว่าปิดการวิเคราะห์ และ analyzeSheet คืน null ให้ผู้เรียกใช้กฎแทน', async () => {
+  it('ไม่มี ANTHROPIC_API_KEY ถือว่าปิดการวิเคราะห์ และ analyzeSheet บอกสถานะ off ให้ผู้เรียกใช้กฎแทน', async () => {
     const saved = process.env.ANTHROPIC_API_KEY
     delete process.env.ANTHROPIC_API_KEY
     expect(analysisEnabled()).toBe(false)
-    await expect(analyzeSheet('งานทดสอบ', [['a']])).resolves.toBeNull()
+    await expect(analyzeSheet('งานทดสอบ', [['a']])).resolves.toEqual({ status: 'off' })
     if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved
   })
 })

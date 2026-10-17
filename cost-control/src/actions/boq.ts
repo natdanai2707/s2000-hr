@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requireUser } from '@/lib/auth'
 import { readSheets, detectLayout, buildPreview } from '@/lib/boq/parse'
 import { splitRows, type ColumnMapping } from '@/lib/boq/split'
-import { analyzeSheet, analysisEnabled } from '@/lib/boq/analyze'
+import { analyzeSheet } from '@/lib/boq/analyze'
+import { verifySheet, type CheckIssue, type ContractCandidate } from '@/lib/boq/verify'
 import { readStoredTemplate, type SheetLayout } from '@/lib/boq/layout'
 import { chooseLayout, templateHeaders } from '@/lib/boq/choose'
 import { safeObjectName } from '@/lib/storage'
@@ -32,6 +33,16 @@ export interface UploadPreviewSheet {
   deduction_headings: string[]
   deduction_items: number
   markup_column_rejected: boolean
+  // สถานะการอ่านด้วย Claude: used = ใช้ผลของ Claude, unused = Claude อ่านแล้วแต่ใช้ template หรือกฎแทน,
+  // off = ไม่ได้ตั้ง ANTHROPIC_API_KEY, failed = ตั้งแล้วแต่เรียกไม่สำเร็จ
+  ai_status: 'used' | 'unused' | 'off' | 'failed'
+  ai_error: string | null
+  // ผลตรวจตัวเลขที่คำนวณไว้ในไฟล์
+  check_count: number
+  check_issues: CheckIssue[]
+  // ชีตรายละเอียด BOQ หรือไม่ ใช้เลือกมูลค่าสัญญา
+  is_detail: boolean
+  contract: ContractCandidate | null
 }
 
 export interface UploadPreviewResult {
@@ -81,13 +92,14 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
   const ANALYZE_LIMIT = 8
   const analyses = await Promise.all(
     raw.map(async (sheet, idx) => {
-      if (!analysisEnabled() || idx >= ANALYZE_LIMIT) return null
+      if (idx >= ANALYZE_LIMIT) return { status: 'failed', reason: `อ่านด้วย Claude ได้ไม่เกิน ${ANALYZE_LIMIT} ชีตต่อไฟล์` } as const
       return analyzeSheet(sheet.name, sheet.grid)
     })
   )
 
   const sheets: UploadPreviewSheet[] = raw.map((sheet, idx) => {
-    const ai = analyses[idx]
+    const outcome = analyses[idx]
+    const ai = outcome.status === 'ok' ? outcome.result : null
     const chosen = chooseLayout(sheet.name, sheet.grid, templateMap.get(sheet.name) ?? null, ai)
     const { layout, mapping, preview, split } = chosen
     const source = chosen.source
@@ -96,6 +108,7 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
     // ส่วนชีตปกและใบเสนอราคามีแต่ยอดรวม ถ้านำเข้าด้วยจะนับต้นทุนซ้ำ
     const hasPriceColumns = mapping.material_price != null || mapping.labor_price != null
     const suggested = ai ? ai.is_boq_detail_sheet && split.items.length > 0 : split.items.length > 0 && hasPriceColumns
+    const check = verifySheet(sheet.grid, layout, mapping, { roles: ai?.roles, contractCell: ai?.contract_cell ?? null })
 
     return {
       name: sheet.name,
@@ -118,6 +131,12 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
       deduction_headings: split.deduction_headings,
       deduction_items: split.deduction_items,
       markup_column_rejected: split.markup_column_rejected,
+      ai_status: outcome.status === 'ok' ? (source === 'ai' ? 'used' : 'unused') : outcome.status,
+      ai_error: outcome.status === 'failed' ? outcome.reason : null,
+      check_count: check.checked,
+      check_issues: check.issues.slice(0, 30),
+      is_detail: ai ? ai.is_boq_detail_sheet : hasPriceColumns && split.items.length > 0,
+      contract: check.contract,
     }
   })
 
@@ -140,8 +159,10 @@ export async function importBoq(
   type: BoqVersionType,
   sheets: ImportSheetInput[],
   defaultMarkupPct: number,
-  note: string
-): Promise<ActionResult<{ version_id: string }>> {
+  note: string,
+  // มูลค่าสัญญาที่อ่านจากไฟล์: set = ตั้งเป็นมูลค่าสัญญา (BOQ ใหม่), add = บวกเพิ่ม (VO)
+  contract: { mode: 'set' | 'add'; amount: number } | null = null
+): Promise<ActionResult<{ version_id: string; contract_error: string | null }>> {
   const user = await requireUser()
   const supabase = await createClient()
 
@@ -233,7 +254,21 @@ export async function importBoq(
   }
 
   revalidatePath(`/projects/${projectId}`)
-  return { ok: true, data: { version_id: versionId } }
+  // ทำหลังนำเข้ารายการสำเร็จเท่านั้น นำเข้าไม่สำเร็จมูลค่าสัญญาต้องไม่เปลี่ยน
+  let contractError: string | null = null
+  if (contract && contract.amount > 0) {
+    let next = Math.round(contract.amount * 100) / 100
+    if (contract.mode === 'add') {
+      const { data: proj } = await supabase.from('projects').select('contract_value').eq('id', projectId).single()
+      next = Math.round((Number(proj?.contract_value ?? 0) + contract.amount) * 100) / 100
+    }
+    const { data: updated, error: cErr } = await supabase.from('projects').update({ contract_value: next }).eq('id', projectId).select('id')
+    if (cErr) contractError = cErr.message
+    else if (!updated?.length) contractError = 'ไม่มีสิทธิ์แก้ไขโครงการนี้'
+  }
+
+  revalidatePath('/')
+  return { ok: true, data: { version_id: versionId, contract_error: contractError } }
 }
 
 export async function confirmBoqVersion(versionId: string, projectId: string): Promise<ActionResult> {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { uploadBoqPreview, importBoq, type UploadPreviewResult } from '@/actions/boq'
 import { BOQ_COLUMN_LABELS, type BoqColumnKey, type ColumnMapping } from '@/lib/boq/split'
 import { formatBaht } from '@/lib/format'
+import { suggestContract } from '@/lib/boq/verify'
 import type { BoqVersionType } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,9 +14,9 @@ import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 
 
-const COLUMN_KEYS: BoqColumnKey[] = ['item_no', 'description', 'unit', 'qty', 'material_price', 'labor_price', 'total', 'markup_pct']
+const COLUMN_KEYS: BoqColumnKey[] = ['item_no', 'description', 'unit', 'qty', 'material_price', 'labor_price', 'total', 'markup_pct', 'material_total', 'labor_total', 'unit_rate']
 
-export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { projectId: string; hasConfirmed: boolean; initialType: BoqVersionType }) {
+export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentContract }: { projectId: string; hasConfirmed: boolean; initialType: BoqVersionType; currentContract: number }) {
   const router = useRouter()
   const [type, setType] = useState<BoqVersionType>(initialType)
   const [markup, setMarkup] = useState('0')
@@ -26,6 +27,10 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
   const [edited, setEdited] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  // มูลค่าสัญญาที่อ่านได้จากไฟล์ ผู้ใช้แก้ได้ ถ้ายังไม่แก้จะตามชีตที่เลือกนำเข้า
+  const [contractText, setContractText] = useState<string | null>(null)
+  const [applyContract, setApplyContract] = useState(true)
+  const [ackIssues, setAckIssues] = useState(false)
 
   async function onUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -48,7 +53,17 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
     setMappings(m)
     setInclude(inc)
     setEdited({})
+    setContractText(null)
+    setApplyContract(type === 'quotation')
+    setAckIssues(false)
   }
+
+  const contractSuggestion = useMemo(() => {
+    if (!preview) return null
+    return suggestContract(preview.sheets.map(s => ({ name: s.name, is_detail: s.is_detail, included: include[s.name] ?? false, contract: s.contract })))
+  }, [preview, include])
+  const contractValue = contractText ?? (contractSuggestion ? contractSuggestion.amount.toFixed(2) : '')
+  const issueCount = preview ? preview.sheets.reduce((n, s) => n + s.check_issues.length, 0) : 0
 
   // ตัวเลขรวมของชีตที่เลือก คำนวณจากทั้งชีตฝั่งเซิร์ฟเวอร์ตอนอัปโหลด
   const previewSummary = useMemo(() => {
@@ -83,11 +98,16 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
         include: include[s.name] ?? false,
       })),
       Number(markup) || 0,
-      note
+      note,
+      applyContract && Number(contractValue) > 0 ? { mode: type === 'variation_order' ? 'add' : 'set', amount: Number(contractValue) } : null
     )
     setPending(false)
     if (!res.ok) {
       setError(res.error)
+      return
+    }
+    if (res.data.contract_error) {
+      setError(`นำเข้า BOQ แล้ว แต่บันทึกมูลค่าสัญญาไม่สำเร็จ: ${res.data.contract_error} แก้ได้ที่หน้าแก้ไขโครงการ`)
       return
     }
     router.push(`/projects/${projectId}/boq/${res.data.version_id}`)
@@ -138,10 +158,12 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                   <div className="text-xs text-muted-foreground">
                     {sheet.row_count} แถว · หัวตาราง {sheet.header_rows} แถว · ข้อมูลเริ่มแถว {sheet.layout.data_start_row} ·{' '}
                     {sheet.mapping_source === 'template'
-                      ? 'ใช้รูปแบบที่บันทึกไว้จากการนำเข้าครั้งก่อน'
+                      ? 'ใช้รูปแบบที่บันทึกไว้จากการนำเข้าครั้งก่อน (Claude อ่านซ้ำแล้วตรงกัน)'
                       : sheet.mapping_source === 'ai'
                         ? `Claude อ่านโครงให้ ความมั่นใจ ${confidenceLabel(sheet.ai_confidence)}`
-                        : 'ตรวจจับด้วยกฎพื้นฐาน กรุณาตรวจสอบให้ละเอียด'}
+                        : sheet.ai_status === 'unused'
+                          ? 'Claude อ่านแล้วแตกรายการไม่ได้ จึงใช้กฎพื้นฐานแทน กรุณาตรวจสอบให้ละเอียด'
+                          : 'ตรวจจับด้วยกฎพื้นฐาน กรุณาตรวจสอบให้ละเอียด'}
                   </div>
                   <div className="text-xs mt-0.5">
                     {sheet.item_count > 0 ? (
@@ -214,11 +236,33 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
                   ข้อสังเกตจากการอ่านไฟล์: {sheet.ai_warnings.join(' · ')}
                 </Alert>
               )}
-              {sheet.mapping_source === 'rules' && include[sheet.name] && (
+              {sheet.ai_status === 'off' && include[sheet.name] && (
                 <Alert tone="warning">
-                  ยังไม่ได้ตั้งค่าการอ่านไฟล์ด้วย Claude ระบบจึงเดาคอลัมน์จากชื่อหัวตาราง
+                  ระบบยังเรียก Claude ไม่ได้ เพราะไม่พบ ANTHROPIC_API_KEY บนเซิร์ฟเวอร์ ระบบจึงเดาคอลัมน์จากชื่อหัวตาราง
                   ถ้าหัวคอลัมน์ในไฟล์สะกดไม่เหมือนมาตรฐาน อาจจับผิด กรุณาตรวจการจับคู่ด้านบนให้ครบก่อนนำเข้า
                 </Alert>
+              )}
+              {sheet.ai_status === 'failed' && include[sheet.name] && (
+                <Alert tone="warning">
+                  เรียก Claude ไม่สำเร็จ ({sheet.ai_error}) ระบบจึงเดาคอลัมน์จากชื่อหัวตาราง กรุณาตรวจการจับคู่ด้านบนให้ครบก่อนนำเข้า
+                </Alert>
+              )}
+              {sheet.check_issues.length > 0 ? (
+                <Alert tone="danger">
+                  <div className="font-medium">
+                    ตัวเลขในไฟล์คำนวณไม่ตรง {sheet.check_issues.length} จุด จากที่ตรวจ {sheet.check_count} จุด
+                    {edited[sheet.name] && ' (ตรวจด้วยการจับคู่คอลัมน์ก่อนแก้)'}
+                  </div>
+                  <ul className="mt-1 space-y-0.5 text-xs">
+                    {sheet.check_issues.map((i, k) => (
+                      <li key={k}>แถว {i.row} · {i.label}: {i.message}</li>
+                    ))}
+                  </ul>
+                </Alert>
+              ) : (
+                sheet.check_count > 0 && (
+                  <p className="text-xs text-success-fg">ตรวจตัวเลขที่คำนวณไว้ในไฟล์ {sheet.check_count} จุด ถูกต้องทั้งหมด</p>
+                )
               )}
               {sheet.markup_column_rejected && include[sheet.name] && (
                 <Alert tone="warning">
@@ -236,6 +280,43 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
             </div>
           ))}
 
+          <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+            <div className="font-semibold">มูลค่าสัญญา</div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField label={type === 'variation_order' ? 'มูลค่าของ VO นี้ (ไม่รวม VAT)' : 'มูลค่าสัญญา (ไม่รวม VAT)'}>
+                <Input type="number" step="0.01" min="0" inputMode="decimal" value={contractValue} onChange={e => setContractText(e.target.value)} />
+              </FormField>
+              <div className="text-xs text-muted-foreground sm:pt-6 space-y-0.5">
+                {contractSuggestion ? (
+                  <div>
+                    อ่านจากชีต {contractSuggestion.sheet}
+                    {contractSuggestion.row !== null && ` แถว ${contractSuggestion.row}`}
+                    {contractSuggestion.label && ` (${contractSuggestion.label.slice(0, 50)})`}
+                    {contractSuggestion.source === 'ai' ? ' โดย Claude' : ' ด้วยกฎพื้นฐาน'}
+                    {contractText !== null && ' · แก้ตัวเลขเองแล้ว'}
+                  </div>
+                ) : (
+                  <div>ไม่พบยอดรวมในไฟล์ กรอกเองได้</div>
+                )}
+                <div>มูลค่าสัญญาปัจจุบันของโครงการ {formatBaht(currentContract)} บาท</div>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" className="w-4 h-4" checked={applyContract} onChange={e => setApplyContract(e.target.checked)} />
+              {type === 'variation_order' ? 'บวกยอดนี้เพิ่มเข้ามูลค่าสัญญาของโครงการ' : 'ตั้งยอดนี้เป็นมูลค่าสัญญาของโครงการ'}
+            </label>
+          </div>
+
+          {issueCount > 0 && (
+            <label className="flex items-start gap-2 rounded-xl border border-border bg-card p-4 text-sm">
+              <input type="checkbox" className="w-4 h-4 mt-0.5" checked={ackIssues} onChange={e => setAckIssues(e.target.checked)} />
+              <span>
+                รับทราบว่าไฟล์มีตัวเลขคำนวณไม่ตรง {issueCount} จุด งบต้นทุนในระบบคำนวณจาก ปริมาณ × ราคาต่อหน่วย ไม่ได้ใช้ยอดรวมในไฟล์
+                ถ้าราคาต่อหน่วยหรือปริมาณในไฟล์ผิด ให้แก้ไฟล์แล้วนำเข้าใหม่ หรือแก้ในหน้าเวอร์ชันก่อนยืนยัน
+              </span>
+            </label>
+          )}
+
           <div className="rounded-xl border border-border bg-card p-4 flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm">
               <span className="text-muted-foreground">รวมที่จะนำเข้า </span>
@@ -243,7 +324,7 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType }: { proj
               {formatBaht(previewSummary?.cost ?? 0)} บาท
               {previewSummary?.stale && <span className="text-muted-foreground"> (ยังไม่รวมการจับคู่คอลัมน์ที่เพิ่งแก้)</span>}
             </div>
-            <Button onClick={onImport} disabled={pending || !allMapped}>{pending ? 'กำลังนำเข้า' : 'นำเข้า BOQ'}</Button>
+            <Button onClick={onImport} disabled={pending || !allMapped || (issueCount > 0 && !ackIssues)}>{pending ? 'กำลังนำเข้า' : 'นำเข้า BOQ'}</Button>
           </div>
           {!allMapped && <Alert tone="warning">กรุณาจับคู่คอลัมน์ รายการ และ ปริมาณ ให้ครบทุกชีตที่เลือก</Alert>}
         </div>

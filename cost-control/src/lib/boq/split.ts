@@ -14,6 +14,10 @@ export type BoqColumnKey =
   | 'labor_price'
   | 'total'
   | 'markup_pct'
+  // ใช้ตรวจตัวเลขในไฟล์เท่านั้น ไม่ได้ใช้คำนวณงบ
+  | 'material_total'
+  | 'labor_total'
+  | 'unit_rate'
 
 export const BOQ_COLUMN_LABELS: Record<BoqColumnKey, string> = {
   item_no: 'ลำดับ',
@@ -24,6 +28,9 @@ export const BOQ_COLUMN_LABELS: Record<BoqColumnKey, string> = {
   labor_price: 'ราคาแรงงานต่อหน่วย',
   total: 'รวม',
   markup_pct: 'markup (%)',
+  material_total: 'รวมค่าวัสดุ (ตรวจตัวเลข)',
+  labor_total: 'รวมค่าแรง (ตรวจตัวเลข)',
+  unit_rate: 'ราคาต่อหน่วยรวม (ตรวจตัวเลข)',
 }
 
 // mapping: ชื่อคอลัมน์ในระบบ -> index คอลัมน์ในชีต (0-based) หรือ null ถ้าไม่มี
@@ -101,6 +108,9 @@ const HEADER_PATTERNS: { key: BoqColumnKey; re: RegExp; not?: RegExp }[] = [
   { key: 'qty', re: /(ปริมาณ|จำนวน|qty|quantity)/, not: /(เงิน|amount|บาท)/ },
   { key: 'material_price', re: /(วัสดุ|material)/, not: /(รวม|total|amount|subtotal)/ },
   { key: 'labor_price', re: /(ค่าแรง|แรงงาน|labou?r)/, not: /(รวม|total|amount|subtotal)/ },
+  { key: 'material_total', re: /(วัสดุ|material).*(รวม|total|amount|จำนวนเงิน)|(รวม|total).*(วัสดุ|material)/ },
+  { key: 'labor_total', re: /(ค่าแรง|แรงงาน|labou?r).*(รวม|total|amount|จำนวนเงิน)|(รวม|total).*(ค่าแรง|แรงงาน|labou?r)/ },
+  { key: 'unit_rate', re: /^(unitrate|ราคาหน่วย|ราคาต่อหน่วย|ราคาต่อหน่วยรวม)$/ },
   { key: 'markup_pct', re: /(markup|กำไร|profit|^%$)/, not: /(ราคา|price|บาท|baht|รวม|total|amount|จำนวน|unit)/ },
   { key: 'total', re: /(รวม|total|amount|จำนวนเงิน)/, not: /(วัสดุ|material|ค่าแรง|แรงงาน|labou?r|unitrate)/ },
 ]
