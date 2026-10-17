@@ -9,7 +9,7 @@ import { formatBaht, formatQty, toNumber } from '@/lib/format'
 import { addVat, VAT_RATE_PCT } from '@/lib/vat'
 import { formatThaiDate, formatThaiDateTime } from '@/lib/date'
 import { PrDecision } from '@/components/app/pr-decision'
-import { VoidDirectPurchase } from '@/components/app/void-direct-purchase'
+import { VoidDirectPurchase, RecordApprovedAsDirect } from '@/components/app/void-direct-purchase'
 
 export default async function PrDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -37,6 +37,7 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
   const direct = usesDirectPurchase(await loadSettings(), role)
   const isDirectPurchase = (approvals ?? []).some(a => a.step === 'direct')
   const canVoid = direct && isDirectPurchase && pr.status === 'approved'
+  const canRecordDirect = direct && !isDirectPurchase && pr.status === 'approved' && !po
   const canCreatePo = !direct && pr.status === 'approved' && !po && (role === 'purchasing' || role === 'management')
 
   return (
@@ -108,6 +109,7 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
 
       {(canDecide || canCancel) && <PrDecision prId={id} canDecide={canDecide} canCancel={canCancel} />}
       {canVoid && <VoidDirectPurchase prId={id} />}
+      {canRecordDirect && <RecordApprovedAsDirect prId={id} />}
     </div>
   )
 }

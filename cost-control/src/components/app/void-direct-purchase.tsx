@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { voidDirectPurchase } from '@/actions/purchase-requests'
+import { voidDirectPurchase, recordApprovedAsDirect } from '@/actions/purchase-requests'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Alert } from '@/components/ui/alert'
@@ -47,6 +47,33 @@ export function VoidDirectPurchase({ prId }: { prId: string }) {
         <Button variant="outline" onClick={() => setOpen(false)} disabled={pending}>ไม่ยกเลิก</Button>
         <Button variant="destructive" onClick={submit} disabled={pending}>{pending ? 'กำลังยกเลิก' : 'ยืนยันยกเลิก'}</Button>
       </div>
+    </div>
+  )
+}
+
+// ใบที่อนุมัติแล้วแต่ยังไม่มีใบสั่งซื้อ กดครั้งเดียวระบบออกใบสั่งซื้อและรับของให้ ต้นทุนเข้าโครงการทันที
+export function RecordApprovedAsDirect({ prId }: { prId: string }) {
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+
+  async function submit() {
+    setPending(true)
+    setError(null)
+    const res = await recordApprovedAsDirect(prId)
+    setPending(false)
+    if (!res.ok) {
+      setError(res.error)
+      return
+    }
+    router.refresh()
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+      {error && <Alert tone="danger">{error}</Alert>}
+      <p className="text-sm">ใบนี้อนุมัติแล้วแต่ยังไม่นับเป็นต้นทุน เพราะยังไม่ได้ออกใบสั่งซื้อและรับของ</p>
+      <Button className="w-full" onClick={submit} disabled={pending}>{pending ? 'กำลังบันทึก' : 'บันทึกเป็นต้นทุนของโครงการ'}</Button>
     </div>
   )
 }
