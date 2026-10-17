@@ -9,6 +9,9 @@ export interface SheetLayout {
 export interface StoredTemplate {
   columns: Record<string, number | null | undefined>
   layout?: SheetLayout
+  // ชื่อหัวคอลัมน์ (normalize แล้ว) ของแต่ละคอลัมน์ที่จับคู่ไว้ ใช้ตรวจว่าไฟล์ใหม่หน้าตาเหมือนไฟล์เดิมจริง
+  // ชีตชื่อเดียวกัน (เช่น BOQ) จากคนละไฟล์อาจวางคอลัมน์ต่างกัน ห้ามใช้ template ทั้งที่หัวตารางไม่ตรง
+  headers?: Record<string, string>
 }
 
 // template รุ่นแรกเก็บเฉพาะ mapping คอลัมน์ ต้องอ่านของเดิมได้ด้วย
@@ -19,6 +22,7 @@ export function readStoredTemplate(value: unknown): StoredTemplate | null {
     return {
       columns: obj.columns as StoredTemplate['columns'],
       layout: (obj.layout as SheetLayout | undefined) ?? undefined,
+      headers: (obj.headers as Record<string, string> | undefined) ?? undefined,
     }
   }
   return { columns: obj as StoredTemplate['columns'] }
