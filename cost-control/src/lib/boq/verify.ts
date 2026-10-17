@@ -125,6 +125,8 @@ export function verifySheet(grid: unknown[][], layout: SheetLayout, mapping: Col
   let sheetSum = 0
   let sheetItems = 0
   const chain: ChainRow[] = []
+  // ผลรวมต้นทุนตั้งแต่แถวยอดต้นทุนล่าสุด ใช้ตรวจแถวยอดรวมที่มีตัวเลขในคอลัมน์ต้นทุนรวม
+  const costSums = { material: 0, labor: 0 }
 
   for (let r = firstRow; r <= grid.length; r++) {
     const row = grid[r - 1] ?? []
@@ -143,6 +145,24 @@ export function verifySheet(grid: unknown[][], layout: SheetLayout, mapping: Col
     const description = cellText(num(row, mapping.description) === null && mapping.description != null ? row[mapping.description] : '')
     const qtyRaw = num(row, mapping.qty)
 
+    if (kind && label && !inSummaryZone) {
+      // แถวยอดรวมที่มีตัวเลขในคอลัมน์ต้นทุนรวม (เช่น Total หมวดใหญ่ของ S-2000) ตรวจกับผลรวมต้นทุนรายการ
+      const costChecks: [number | null, number, string][] = [
+        [num(row, mapping.material_cost_total), costSums.material, 'ต้นทุนวัสดุรวม'],
+        [num(row, mapping.labor_cost_total), costSums.labor, 'ต้นทุนค่าแรงรวม'],
+      ]
+      let hadCost = false
+      for (const [v, sum, what] of costChecks) {
+        if (v === null) continue
+        hadCost = true
+        checked++
+        if (off(v, sum)) report(r, label.text, `${what}ของหมวด ${formatBaht(v)} แต่ผลรวมรายการ = ${formatBaht(sum)}`, v, sum)
+      }
+      if (hadCost) {
+        costSums.material = 0
+        costSums.labor = 0
+      }
+    }
     if (kind && label) {
       const value = rowValue(row, mapping, label.col)
       if (inSummaryBlock && /^total\b/i.test(label.text)) inSummaryBlock = false
@@ -218,6 +238,22 @@ export function verifySheet(grid: unknown[][], layout: SheetLayout, mapping: Col
       checked++
       if (off(tot, qty * unit)) report(r, name, `ยอดรวมบรรทัด ${formatBaht(tot)} แต่ ${formatQty(qty)} × ${formatBaht(unit)} = ${formatBaht(qty * unit)}`, tot, qty * unit)
     }
+
+    // คอลัมน์ต้นทุนของผู้ประมาณราคา
+    const matCost = num(row, mapping.material_cost)
+    const labCost = num(row, mapping.labor_cost)
+    const matCostT = num(row, mapping.material_cost_total)
+    const labCostT = num(row, mapping.labor_cost_total)
+    if (matCost !== null && matCostT !== null) {
+      checked++
+      if (off(matCostT, qty * matCost)) report(r, name, `ต้นทุนวัสดุรวม ${formatBaht(matCostT)} แต่ ${formatQty(qty)} × ${formatBaht(matCost)} = ${formatBaht(qty * matCost)}`, matCostT, qty * matCost)
+    }
+    if (labCost !== null && labCostT !== null) {
+      checked++
+      if (off(labCostT, qty * labCost)) report(r, name, `ต้นทุนค่าแรงรวม ${formatBaht(labCostT)} แต่ ${formatQty(qty)} × ${formatBaht(labCost)} = ${formatBaht(qty * labCost)}`, labCostT, qty * labCost)
+    }
+    costSums.material += matCostT ?? (matCost !== null ? qty * matCost : 0)
+    costSums.labor += labCostT ?? (labCost !== null ? qty * labCost : 0)
 
     const rowTotal = tot ?? (unit !== null ? qty * unit : 0)
     sectionSum += rowTotal

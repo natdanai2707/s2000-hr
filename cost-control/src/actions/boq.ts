@@ -29,6 +29,10 @@ export interface UploadPreviewSheet {
   item_count: number
   section_count: number
   cost_total: number
+  sell_total: number
+  // ใช้ต้นทุนจากคอลัมน์ต้นทุนของผู้ประมาณราคา ราคาในตารางเป็นราคาขาย
+  cost_mode: boolean
+  missing_cost_items: number
   suggested: boolean
   deduction_headings: string[]
   deduction_items: number
@@ -104,6 +108,7 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
     const { layout, mapping, preview, split } = chosen
     const source = chosen.source
     const cost = split.items.reduce((sum, i) => sum + i.qty * i.unit_cost, 0)
+    const sell = split.items.reduce((sum, i) => sum + i.qty * i.sell_unit_price, 0)
     // ชีตที่มีคอลัมน์ราคาวัสดุหรือค่าแรงคือชีต BOQ จริง
     // ส่วนชีตปกและใบเสนอราคามีแต่ยอดรวม ถ้านำเข้าด้วยจะนับต้นทุนซ้ำ
     const hasPriceColumns = mapping.material_price != null || mapping.labor_price != null
@@ -127,6 +132,9 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
       item_count: split.items.length,
       section_count: split.sections.length,
       cost_total: Math.round(cost * 100) / 100,
+      sell_total: Math.round(sell * 100) / 100,
+      cost_mode: split.cost_mode,
+      missing_cost_items: split.missing_cost_items,
       suggested,
       deduction_headings: split.deduction_headings,
       deduction_items: split.deduction_items,

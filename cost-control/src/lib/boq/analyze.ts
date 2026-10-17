@@ -42,6 +42,10 @@ const AnalysisSchema = z.object({
     material_total: ColumnIndex.describe('ยอดรวมค่าวัสดุของบรรทัด (ปริมาณ × ราคาวัสดุต่อหน่วย) ใช้ตรวจตัวเลข'),
     labor_total: ColumnIndex.describe('ยอดรวมค่าแรงของบรรทัด (ปริมาณ × ค่าแรงต่อหน่วย) ใช้ตรวจตัวเลข'),
     unit_rate: ColumnIndex.describe('ราคาต่อหน่วยรวม (วัสดุ + ค่าแรง ต่อหนึ่งหน่วย) ใช้ตรวจตัวเลข'),
+    material_cost: ColumnIndex.describe('ต้นทุนวัสดุจริงต่อหน่วยที่ผู้ประมาณราคาทดไว้ ไม่รวม VAT มักอยู่ด้านขวานอกตารางหลัก'),
+    labor_cost: ColumnIndex.describe('ต้นทุนค่าแรงจริงต่อหน่วยที่ผู้ประมาณราคาทดไว้ มักอยู่ด้านขวานอกตารางหลัก'),
+    material_cost_total: ColumnIndex.describe('ต้นทุนวัสดุรวมของบรรทัด ใช้ตรวจตัวเลข'),
+    labor_cost_total: ColumnIndex.describe('ต้นทุนค่าแรงรวมของบรรทัด ใช้ตรวจตัวเลข'),
     markup_pct: ColumnIndex.describe(
       'คอลัมน์เปอร์เซ็นต์กำไรหรือ markup เท่านั้น ถ้าเป็นคอลัมน์ราคาที่บังเอิญมีเครื่องหมายเปอร์เซ็นต์ในชื่อ ให้เป็น null'
     ),
@@ -111,6 +115,9 @@ const SYSTEM = `คุณคือผู้ช่วยอ่านไฟล์ 
 7. คอลัมน์ไหนไม่มีในชีต ให้ตอบ null อย่าเดา
 8. summary_rows ให้ระบุทุกแถวยอดรวมที่เห็น ทั้งในบล็อกสรุปด้านบนและท้ายหมวด
    ข้อมูลอาจตัดช่วงกลางชีตออก แต่แถวที่มีคำว่ารวม total vat ส่วนลด ถูกส่งมาให้ครบพร้อมเลขแถวจริง
+10. บางไฟล์มีคอลัมน์ต้นทุนจริงอยู่ด้านขวาของตาราง หัวคอลัมน์อาจอยู่ในแถวหัวหมวด ไม่ใช่แถวหัวตาราง
+   เช่น "ต้นทุนวัสดุ /หน่วย" "ต้นทุนค่าแรง/หน่วย" ให้ระบุใน material_cost labor_cost
+   ในไฟล์แบบนี้ ราคาวัสดุและค่าแรงในตารางหลักคือราคาขาย ไม่ใช่ต้นทุน
 9. contract_value_cell คือยอดที่ลูกค้าต้องจ่ายสำหรับงานนี้ทั้งหมด หลังหักส่วนลด
    ในใบเสนอราคามักอยู่บรรทัดก่อน VAT ใน BOQ มักเป็นบรรทัด Total หลัง Overhead & Profit
    ห้ามเลือกยอดที่รวม VAT ถ้ามียอดก่อน VAT ให้เลือก และห้ามพิมพ์ตัวเลขเอง ให้ชี้เซลล์เท่านั้น`
@@ -154,11 +161,14 @@ export function analysisEnabled(): boolean {
 // วิเคราะห์หนึ่งชีต ผู้เรียกต้องมีทางสำรองแบบกฎตายตัวเสมอ ระบบต้องนำเข้าได้แม้ไม่มี API
 export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promise<AnalyzeOutcome> {
   if (!analysisEnabled()) return { status: 'off' }
-  const maxCols = Math.min(Math.max(...grid.slice(0, 60).map(r => r.length), 1), 16)
+  // คอลัมน์ต้นทุนของ S-2000 อยู่ถึงคอลัมน์ X จึงต้องส่งให้เห็นอย่างน้อย 26 คอลัมน์
+  const maxCols = Math.min(Math.max(...grid.slice(0, 60).map(r => r.length), 1), 30)
   const table = gridToText(grid, 45, maxCols)
 
   try {
-    const client = new Anthropic()
+    // key ระดับองค์กรที่ไม่ได้ผูกกับ workspace ต้องบอก workspace ในทุกคำขอ
+    const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim()
+    const client = new Anthropic(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {})
     const response = await client.beta.messages.parse({
       model: 'claude-opus-5-5',
       max_tokens: 16000,
@@ -202,6 +212,10 @@ export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promis
           material_total: parsed.columns.material_total ?? null,
           labor_total: parsed.columns.labor_total ?? null,
           unit_rate: parsed.columns.unit_rate ?? null,
+          material_cost: parsed.columns.material_cost ?? null,
+          labor_cost: parsed.columns.labor_cost ?? null,
+          material_cost_total: parsed.columns.material_cost_total ?? null,
+          labor_cost_total: parsed.columns.labor_cost_total ?? null,
         },
         layout: { header_row: headerRow, header_rows: headerRows, data_start_row: dataStart },
         is_boq_detail_sheet: parsed.is_boq_detail_sheet,
@@ -219,7 +233,7 @@ export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promis
     if (e instanceof Anthropic.RateLimitError) return { status: 'failed', reason: 'เรียกใช้บ่อยเกินไปหรือเครดิตหมด' }
     if (e instanceof Anthropic.APIConnectionTimeoutError) return { status: 'failed', reason: 'Claude ตอบช้าเกินกำหนด' }
     if (e instanceof Anthropic.APIConnectionError) return { status: 'failed', reason: 'เชื่อมต่อ API ไม่ได้' }
-    if (e instanceof Anthropic.APIError) return { status: 'failed', reason: `API ตอบกลับ ${e.status ?? ''} ${e.message}`.slice(0, 160) }
+    if (e instanceof Anthropic.APIError) return { status: 'failed', reason: `API ตอบกลับ ${e.message}`.slice(0, 400) }
     // เช่นคำตอบไม่ตรงรูปแบบที่กำหนด ให้ผู้ใช้เห็นข้อความจริงไว้ส่งต่อให้ผู้ดูแลระบบ
     return { status: 'failed', reason: `อ่านคำตอบของ Claude ไม่ได้: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160) }
   }

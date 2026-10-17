@@ -18,6 +18,11 @@ export type BoqColumnKey =
   | 'material_total'
   | 'labor_total'
   | 'unit_rate'
+  // ต้นทุนจริงที่ผู้ประมาณราคาทดไว้ (ไม่รวม VAT) ถ้ามี ใช้เป็นงบต้นทุน และราคาในตาราง BOQ เป็นราคาขาย
+  | 'material_cost'
+  | 'labor_cost'
+  | 'material_cost_total'
+  | 'labor_cost_total'
 
 export const BOQ_COLUMN_LABELS: Record<BoqColumnKey, string> = {
   item_no: 'ลำดับ',
@@ -31,6 +36,40 @@ export const BOQ_COLUMN_LABELS: Record<BoqColumnKey, string> = {
   material_total: 'รวมค่าวัสดุ (ตรวจตัวเลข)',
   labor_total: 'รวมค่าแรง (ตรวจตัวเลข)',
   unit_rate: 'ราคาต่อหน่วยรวม (ตรวจตัวเลข)',
+  material_cost: 'ต้นทุนวัสดุต่อหน่วย',
+  labor_cost: 'ต้นทุนค่าแรงต่อหน่วย',
+  material_cost_total: 'ต้นทุนวัสดุรวม (ตรวจตัวเลข)',
+  labor_cost_total: 'ต้นทุนค่าแรงรวม (ตรวจตัวเลข)',
+}
+
+// คอลัมน์ต้นทุนของ S-2000 มักอยู่ด้านขวานอกหัวตารางหลัก หัวคอลัมน์อยู่ในแถวหัวหมวด เช่น "ต้นทุนวัสดุ /หน่วย"
+// จึงต้องสแกนทั้งชีต แล้วเลือกคอลัมน์ที่เจอบ่อยที่สุดของแต่ละชนิด
+const COST_HEADER_PATTERNS: { key: 'material_cost' | 'labor_cost' | 'material_cost_total' | 'labor_cost_total'; re: RegExp }[] = [
+  { key: 'material_cost', re: /^ต้นทุน(วัสดุ|ค่าวัสดุ|ค่าของ|ของ)(ต่อ)?หน่วย$/ },
+  { key: 'labor_cost', re: /^ต้นทุน(ค่าแรง|แรงงาน)(ต่อ)?หน่วย$/ },
+  { key: 'material_cost_total', re: /^ต้นทุน(วัสดุ|ค่าวัสดุ|ค่าของ|ของ)รวม$/ },
+  { key: 'labor_cost_total', re: /^ต้นทุน(ค่าแรง|แรงงาน)รวม$/ },
+]
+
+export function detectCostColumns(grid: unknown[][]): ColumnMapping {
+  const counts: Record<string, Map<number, number>> = {}
+  for (const row of grid) {
+    row.forEach((cell, idx) => {
+      const h = normalizeHeader(cell)
+      if (!h.startsWith('ต้นทุน')) return
+      for (const p of COST_HEADER_PATTERNS) {
+        if (!p.re.test(h)) continue
+        const m = (counts[p.key] ??= new Map())
+        m.set(idx, (m.get(idx) ?? 0) + 1)
+      }
+    })
+  }
+  const out: ColumnMapping = {}
+  for (const [key, m] of Object.entries(counts)) {
+    const best = [...m.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]
+    if (best) out[key as BoqColumnKey] = best[0]
+  }
+  return out
 }
 
 // mapping: ชื่อคอลัมน์ในระบบ -> index คอลัมน์ในชีต (0-based) หรือ null ถ้าไม่มี
@@ -64,6 +103,10 @@ export interface SplitResult {
   // หัวข้องานลด (VO) ที่พบ รายการใต้หัวข้อเหล่านี้ถูกนำเข้าเป็นปริมาณติดลบ
   deduction_headings: string[]
   deduction_items: number
+  // ใช้ต้นทุนจากคอลัมน์ต้นทุนของผู้ประมาณราคา ราคาในตาราง BOQ เป็นราคาขาย
+  cost_mode: boolean
+  // บรรทัดที่มีราคาขายแต่ไม่มีต้นทุนในไฟล์ ใช้ราคาขายเป็นต้นทุนแทน (งบไม่ต่ำกว่าจริง)
+  missing_cost_items: number
 }
 
 export function cellNumber(v: unknown): number | null {
@@ -208,6 +251,8 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
   let activeSection: number | null = null
   let lastParent: string | null = null
   let activeDeduction = false
+  const costMode = mapping.material_cost != null || mapping.labor_cost != null
+  let missingCost = 0
   let inSummary = false
   const deductions = new Set<string>()
   let deductionItems = 0
@@ -292,10 +337,12 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
     // งานลดเก็บเป็นปริมาณติดลบ ราคาเป็นบวกเสมอ ยอดรวมจึงหักออกจากงบโดยไม่สนว่าไฟล์เขียนเครื่องหมายไว้ที่ช่องไหน
     const signedQty = activeDeduction ? -Math.abs(qty) : qty
 
-    const push = (category: BoqCategory, rawUnitCost: number) => {
+    // sellPrice: ราคาขายต่อหน่วยจากไฟล์ ถ้าไม่ระบุ คิดจาก markup เหมือนเดิม
+    const push = (category: BoqCategory, rawUnitCost: number, sellPrice?: number) => {
       const unitCost = activeDeduction ? Math.abs(rawUnitCost) : rawUnitCost
       if (activeDeduction) deductionItems++
-      const sell = unitCost * (1 + markup / 100)
+      const sell = sellPrice !== undefined ? Math.abs(sellPrice) : unitCost * (1 + markup / 100)
+      const itemMarkup = sellPrice !== undefined ? (unitCost > 0 ? Math.round((sell / unitCost - 1) * 10000) / 100 : 0) : markup
       items.push({
         section_index: activeSection,
         item_no: itemNo || null,
@@ -304,7 +351,7 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
         qty: signedQty,
         unit_cost: unitCost,
         category,
-        markup_pct: markup,
+        markup_pct: itemMarkup,
         sell_unit_price: Math.round(sell * 100) / 100,
         sort_order: sort++,
       })
@@ -312,6 +359,27 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
 
     const hasMaterial = material !== null && material !== 0
     const hasLabor = labor !== null && labor !== 0
+
+    if (costMode) {
+      // งบต้นทุนจากคอลัมน์ต้นทุน ราคาวัสดุและค่าแรงในตารางเป็นราคาขาย
+      const matCost = cellNumber(pick(row, mapping.material_cost))
+      const labCost = cellNumber(pick(row, mapping.labor_cost))
+      const hasMatCost = matCost !== null && matCost !== 0
+      const hasLabCost = labCost !== null && labCost !== 0
+      let pushed = false
+      if (hasMaterial || hasMatCost) {
+        if (hasMaterial && !hasMatCost) missingCost++
+        push('material', hasMatCost ? Math.round(matCost * 100) / 100 : material!, hasMaterial ? material! : matCost!)
+        pushed = true
+      }
+      if (hasLabor || hasLabCost) {
+        if (hasLabor && !hasLabCost) missingCost++
+        push('labor', hasLabCost ? Math.round(labCost * 100) / 100 : labor!, hasLabor ? labor! : labCost!)
+        pushed = true
+      }
+      if (!pushed) push('material', 0, 0)
+      continue
+    }
 
     if (hasMaterial && hasLabor) {
       push('material', material)
@@ -337,6 +405,8 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
     markup_column_rejected: markupColumnRejected,
     deduction_headings: [...deductions],
     deduction_items: deductionItems,
+    cost_mode: costMode,
+    missing_cost_items: missingCost,
   }
 }
 

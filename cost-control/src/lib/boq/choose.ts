@@ -2,7 +2,7 @@
 // template ใช้ได้ต่อเมื่อหัวตารางของไฟล์ใหม่ตรงกับไฟล์ที่บันทึกไว้จริงและแตกรายการได้ ไม่งั้นข้ามไปใช้ Claude
 // แหล่งไหนแตกได้ 0 รายการ ลองแหล่งถัดไป เพื่อไม่ให้ชีตที่อ่านได้ถูกทิ้งเพราะแหล่งแรกผิด
 import { buildPreview, detectLayout, type SheetPreview } from './parse'
-import { autoDetectMapping, headerScore, normalizeHeader, splitRows, type ColumnMapping, type SplitResult } from './split'
+import { autoDetectMapping, detectCostColumns, headerScore, normalizeHeader, splitRows, type ColumnMapping, type SplitResult } from './split'
 import type { SheetLayout, StoredTemplate } from './layout'
 
 export type LayoutSource = 'template' | 'ai' | 'rules'
@@ -52,9 +52,21 @@ function run(name: string, grid: unknown[][], layout: SheetLayout, mapping: Colu
   return { preview, split: splitRows(preview.rows, mapping, 0) }
 }
 
-export function chooseLayout(name: string, grid: unknown[][], tpl: StoredTemplate | null, ai: AiLayout | null): ChosenLayout {
+// คอลัมน์ต้นทุนหาจากทั้งชีต เติมให้ทุกแหล่งที่ยังไม่ได้ระบุ ผู้ใช้ปิดได้ในหน้านำเข้าโดยเลือก ไม่มี
+function withCostColumns(mapping: ColumnMapping, cost: ColumnMapping): ColumnMapping {
+  const out = { ...mapping }
+  for (const [k, v] of Object.entries(cost) as [keyof ColumnMapping, number][]) {
+    if (out[k] === undefined || out[k] === null) out[k] = v
+  }
+  return out
+}
+
+export function chooseLayout(name: string, grid: unknown[][], tplIn: StoredTemplate | null, aiIn: AiLayout | null): ChosenLayout {
+  const cost = detectCostColumns(grid)
+  const tpl = tplIn ? { ...tplIn, columns: withCostColumns(tplIn.columns as ColumnMapping, cost) } : null
+  const ai = aiIn ? { ...aiIn, mapping: withCostColumns(aiIn.mapping, cost) } : null
   const rulesLayout = detectLayout(grid)
-  const rulesMapping = autoDetectMapping(buildPreview(name, grid, rulesLayout).headers)
+  const rulesMapping = withCostColumns(autoDetectMapping(buildPreview(name, grid, rulesLayout).headers), cost)
   const candidates: ChosenLayout[] = []
   let templateRejected = false
 
