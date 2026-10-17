@@ -4,7 +4,8 @@ import { requireUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader, StatusBadge, Money } from '@/components/app/common'
 import { Button } from '@/components/ui/button'
-import { formatBaht, formatQty } from '@/lib/format'
+import { formatBaht, formatQty, toNumber } from '@/lib/format'
+import { addVat, VAT_RATE_PCT } from '@/lib/vat'
 import { formatThaiDate, formatThaiDateTime } from '@/lib/date'
 import { PrDecision } from '@/components/app/pr-decision'
 
@@ -51,7 +52,8 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
         <div><div className="text-xs text-muted-foreground">ผู้ขอ</div><div>{(pr.profiles as unknown as { full_name: string } | null)?.full_name ?? ''}</div></div>
         <div><div className="text-xs text-muted-foreground">ส่งเมื่อ</div><div>{pr.submitted_at ? formatThaiDateTime(pr.submitted_at) : '-'}</div></div>
         <div><div className="text-xs text-muted-foreground">วันที่ต้องการ</div><div>{pr.needed_by_date ? formatThaiDate(pr.needed_by_date) : '-'}</div></div>
-        <div><div className="text-xs text-muted-foreground">มูลค่ารวม</div><Money value={pr.total_amount} className="font-semibold" /></div>
+        <div><div className="text-xs text-muted-foreground">มูลค่ารวม (ไม่รวม VAT)</div><Money value={pr.total_amount} className="font-semibold" /></div>
+        <div><div className="text-xs text-muted-foreground">มูลค่ารวม (รวม VAT {VAT_RATE_PCT}%)</div><Money value={addVat(toNumber(pr.total_amount))} /></div>
         {pr.note && <div className="col-span-2"><div className="text-xs text-muted-foreground">หมายเหตุ</div><div>{pr.note}</div></div>}
       </div>
 

@@ -94,7 +94,7 @@ export function ExpenseForm({ projects, initialProjectId }: { projects: Project[
       )}
       <div className="grid grid-cols-2 gap-3">
         <FormField label="วันที่"><Input name="expense_date" type="date" defaultValue={todayISO()} required /></FormField>
-        <FormField label="จำนวนเงิน (บาท)"><Input name="amount" type="number" step="0.01" min="0" inputMode="decimal" required /></FormField>
+        <FormField label="จำนวนเงิน (ไม่รวม VAT)" hint="มีใบกำกับภาษี กรอกยอดก่อน VAT ถ้าไม่มี VAT กรอกยอดที่จ่ายจริง"><Input name="amount" type="number" step="0.01" min="0" inputMode="decimal" required /></FormField>
       </div>
       <FormField label="รายละเอียด"><Input name="description" required placeholder="เช่น ค่าน้ำมันรถขนเหล็ก" /></FormField>
       <FormField label="ใบเสร็จ / รูปแนบ"><Input type="file" name="attachment" accept="image/*,.pdf" capture="environment" /></FormField>

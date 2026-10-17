@@ -189,7 +189,7 @@ export function BoqItemsEditor({
               <FormField label="ปริมาณ">
                 <Input name="qty" type="number" step="0.001" inputMode="decimal" required defaultValue={current?.qty ?? ''} />
               </FormField>
-              <FormField label="ต้นทุนต่อหน่วย">
+              <FormField label="ต้นทุนต่อหน่วย (ไม่รวม VAT)">
                 <Input name="unit_cost" type="number" step="0.01" inputMode="decimal" required defaultValue={current?.unit_cost ?? ''} />
               </FormField>
               <FormField label="markup (%)">
