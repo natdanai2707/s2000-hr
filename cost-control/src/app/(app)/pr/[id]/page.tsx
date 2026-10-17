@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requireUser } from '@/lib/auth'
+import { requireUser, loadSettings } from '@/lib/auth'
+import { usesDirectPurchase } from '@/lib/types'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader, StatusBadge, Money } from '@/components/app/common'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,7 @@ import { formatBaht, formatQty, toNumber } from '@/lib/format'
 import { addVat, VAT_RATE_PCT } from '@/lib/vat'
 import { formatThaiDate, formatThaiDateTime } from '@/lib/date'
 import { PrDecision } from '@/components/app/pr-decision'
+import { VoidDirectPurchase } from '@/components/app/void-direct-purchase'
 
 export default async function PrDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -32,7 +34,10 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
     (pr.status === 'pending_pm' && (role === 'management' || (role === 'project_manager' && isMember))) ||
     (pr.status === 'pending_management' && role === 'management')
   const canCancel = pr.requested_by === user.id && ['draft', 'pending_pm', 'pending_management', 'rejected'].includes(pr.status)
-  const canCreatePo = pr.status === 'approved' && !po && (role === 'purchasing' || role === 'management')
+  const direct = usesDirectPurchase(await loadSettings(), role)
+  const isDirectPurchase = (approvals ?? []).some(a => a.step === 'direct')
+  const canVoid = direct && isDirectPurchase && pr.status === 'approved'
+  const canCreatePo = !direct && pr.status === 'approved' && !po && (role === 'purchasing' || role === 'management')
 
   return (
     <div className="max-w-3xl">
@@ -92,8 +97,8 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
           {approvals.map(a => (
             <div key={a.id} className="px-4 py-2.5">
               <div className="flex justify-between">
-                <span>{a.step === 'pm' ? 'ผู้จัดการโครงการ' : 'ฝ่ายบริหาร'}: {(a.profiles as unknown as { full_name: string } | null)?.full_name ?? ''}</span>
-                <span className={a.decision === 'approved' ? 'text-success-fg' : 'text-danger-fg'}>{a.decision === 'approved' ? 'อนุมัติ' : 'ปฏิเสธ'}</span>
+                <span>{a.step === 'pm' ? 'ผู้จัดการโครงการ' : a.step === 'direct' ? 'บันทึกซื้อตรง' : a.step === 'direct_void' ? 'ยกเลิกรายการ' : 'ฝ่ายบริหาร'}: {(a.profiles as unknown as { full_name: string } | null)?.full_name ?? ''}</span>
+                <span className={a.decision === 'approved' ? 'text-success-fg' : 'text-danger-fg'}>{a.step === 'direct_void' ? 'ยกเลิก' : a.decision === 'approved' ? 'อนุมัติ' : 'ปฏิเสธ'}</span>
               </div>
               <div className="text-xs text-muted-foreground">{formatThaiDateTime(a.decided_at)}{a.comment ? ` · ${a.comment}` : ''}</div>
             </div>
@@ -102,6 +107,7 @@ export default async function PrDetailPage({ params }: { params: Promise<{ id: s
       )}
 
       {(canDecide || canCancel) && <PrDecision prId={id} canDecide={canDecide} canCancel={canCancel} />}
+      {canVoid && <VoidDirectPurchase prId={id} />}
     </div>
   )
 }

@@ -1,9 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { requireUser } from '@/lib/auth'
+import { requireUser, loadSettings } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import type { BoqItemCost, ProjectSummary, Profile } from '@/lib/types'
-import { BOQ_VERSION_TYPE_LABELS, ROLE_LABELS } from '@/lib/types'
+import { BOQ_VERSION_TYPE_LABELS, ROLE_LABELS, usesDirectPurchase } from '@/lib/types'
 import { PageHeader, Stat, StatusBadge, Money, EmptyState } from '@/components/app/common'
 import { Button } from '@/components/ui/button'
 import { formatBaht, formatPct, toNumber } from '@/lib/format'
@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const user = await requireUser()
+  const direct = usesDirectPurchase(await loadSettings(), user.profile.role)
   const supabase = await createClient()
 
   const { data: summary } = await supabase.from('v_project_summary').select('*').eq('project_id', id).maybeSingle()
@@ -37,8 +38,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         .from('purchase_requests')
         .select('id, pr_no, status, total_amount, needed_by_date, submitted_at, profiles!purchase_requests_requested_by_fkey(full_name)')
         .eq('project_id', id)
-        .in('status', ['pending_pm', 'pending_management'])
-        .order('submitted_at', { ascending: true }),
+        // โหมดบันทึกซื้อตรงไม่มีใบรออนุมัติ แสดงรายการสั่งซื้อล่าสุดแทน
+        .in('status', direct ? ['approved'] : ['pending_pm', 'pending_management'])
+        .order('submitted_at', { ascending: !direct })
+        .limit(direct ? 10 : 100),
       supabase.from('project_members').select('user_id, role_in_project, profiles(id, full_name, role)').eq('project_id', id),
       supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
       supabase.from('branches').select('name').eq('id', s.branch_id).maybeSingle(),
@@ -59,7 +62,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/edit`}>แก้ไขโครงการ</Link></Button>}
             {canManage && s.confirmed_version_id && <EditBoqButton projectId={id} />}
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/boq/import`}>นำเข้า BOQ</Link></Button>}
-            <Button asChild variant="outline"><Link href={`/pr/new?project=${id}`}>ขอซื้อ</Link></Button>
+            <Button asChild variant="outline"><Link href={`/pr/new?project=${id}`}>{direct ? 'บันทึกการสั่งซื้อ' : 'ขอซื้อ'}</Link></Button>
             <Button asChild variant="outline"><Link href={`/expenses/new?project=${id}`}>บันทึกค่าใช้จ่าย</Link></Button>
             {(user.profile.role === 'management' || user.profile.role === 'admin') && (
               <DeleteProjectButton projectId={id} projectCode={s.code} />
@@ -130,9 +133,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       )}
 
       <section className="mb-6">
-        <h2 className="font-semibold mb-2">ใบขอซื้อรออนุมัติ</h2>
+        <h2 className="font-semibold mb-2">{direct ? 'รายการสั่งซื้อล่าสุด' : 'ใบขอซื้อรออนุมัติ'}</h2>
         {!pendingPrs?.length ? (
-          <p className="text-sm text-muted-foreground">ไม่มีใบขอซื้อรออนุมัติ</p>
+          <p className="text-sm text-muted-foreground">{direct ? 'ยังไม่มีรายการสั่งซื้อ' : 'ไม่มีใบขอซื้อรออนุมัติ'}</p>
         ) : (
           <div className="rounded-xl border border-border bg-card divide-y divide-border">
             {pendingPrs.map(pr => (

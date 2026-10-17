@@ -3,21 +3,11 @@ import type { ProjectSummary } from '@/lib/types'
 import { formatBaht, formatPct, toNumber } from '@/lib/format'
 import { formatThaiDate } from '@/lib/date'
 import { cn } from '@/lib/utils'
+import { costTone, consumedPct, hasBudget } from '@/lib/cost'
+import { CostMeter } from './cost-meter'
 
-// สถานะสี: ส่วนต่าง (ต้นทุน% − ความก้าวหน้า%) <= 0 ปกติ, 0 ถึง 5 เฝ้าระวัง, > 5 เตือน
-// เฟส 1 ยังไม่มีความก้าวหน้า ใช้ต้นทุน% เทียบ 100% ของงบเป็นหลักชั่วคราว: เกินงบ = เตือน, > 95% = เฝ้าระวัง
-export function statusTone(p: ProjectSummary): 'normal' | 'watch' | 'alert' {
-  if (p.cost_vs_progress !== null && p.cost_vs_progress !== undefined) {
-    const d = toNumber(p.cost_vs_progress)
-    if (d <= 0) return 'normal'
-    if (d <= 5) return 'watch'
-    return 'alert'
-  }
-  const cost = toNumber(p.cost_pct)
-  if (cost > 100 || toNumber(p.forecast_profit) < 0) return 'alert'
-  if (cost > 95) return 'watch'
-  return 'normal'
-}
+// ใช้กติกาเดียวกับหน้าภาพรวมต้นทุน
+export const statusTone = costTone
 
 const toneClass = { normal: 'border-l-status-normal', watch: 'border-l-status-watch', alert: 'border-l-status-alert' }
 
@@ -40,22 +30,27 @@ export function ProjectCard({ project: p }: { project: ProjectSummary }) {
           <dt className="text-xs text-muted-foreground">มูลค่าสัญญา</dt>
           <dd className="tabular font-medium">{formatBaht(p.contract_value)}</dd>
         </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">ต้นทุน (% ของงบ)</dt>
-          <dd className="tabular font-medium">{p.cost_pct === null ? '-' : formatPct(p.cost_pct)}</dd>
+        <div className="col-span-2">
+          <dt className="text-xs text-muted-foreground mb-1">ต้นทุนใช้ไปแล้ว (% ของงบ)</dt>
+          <dd><CostMeter pct={consumedPct(p)} tone={tone} /></dd>
         </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">ความก้าวหน้า</dt>
-          <dd className="tabular font-medium">{p.progress_pct === null ? 'ยังไม่เปิดใช้งาน' : formatPct(p.progress_pct)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">ส่วนต่าง (ต้นทุน − ความก้าวหน้า)</dt>
-          <dd className="tabular font-medium">{p.cost_vs_progress === null ? '-' : formatPct(p.cost_vs_progress)}</dd>
-        </div>
+        {/* ความก้าวหน้าเปิดใช้ในเฟส 2 ระหว่างนี้ไม่แสดงช่องว่าง */}
+        {p.progress_pct !== null && (
+          <>
+            <div>
+              <dt className="text-xs text-muted-foreground">ความก้าวหน้า</dt>
+              <dd className="tabular font-medium">{p.progress_pct === null ? 'ยังไม่เปิดใช้งาน' : formatPct(p.progress_pct)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">ส่วนต่าง (ต้นทุน − ความก้าวหน้า)</dt>
+              <dd className="tabular font-medium">{p.cost_vs_progress === null ? '-' : formatPct(p.cost_vs_progress)}</dd>
+            </div>
+          </>
+        )}
         <div>
           <dt className="text-xs text-muted-foreground">กำไรพยากรณ์ / คาดหวัง</dt>
-          <dd className={cn('tabular font-medium', toNumber(p.forecast_profit) < toNumber(p.expected_profit) && 'text-danger-fg')}>
-            {formatBaht(p.forecast_profit)} / {formatBaht(p.expected_profit)}
+          <dd className={cn('tabular font-medium', hasBudget(p) && toNumber(p.forecast_profit) < toNumber(p.expected_profit) && 'text-danger-fg')}>
+            {hasBudget(p) ? `${formatBaht(p.forecast_profit)} / ${formatBaht(p.expected_profit)}` : '-'}
           </dd>
         </div>
         <div>

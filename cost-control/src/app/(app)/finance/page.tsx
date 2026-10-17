@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import { requireUser } from '@/lib/auth'
+import { requireUser, loadSettings } from '@/lib/auth'
+import { usesDirectPurchase } from '@/lib/types'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader, EmptyState, StatusBadge, Money } from '@/components/app/common'
 import { Button } from '@/components/ui/button'
@@ -23,14 +24,19 @@ export default async function FinancePage() {
     supabase.from('suppliers').select('id, name').order('name'),
   ])
   const today = todayISO()
+  const direct = usesDirectPurchase(await loadSettings(), user.profile.role)
 
   return (
     <div>
       <PageHeader
-        title="การรับของและชำระเงิน"
+        title={direct ? 'ใบแจ้งหนี้และชำระเงิน' : 'การรับของและชำระเงิน'}
         actions={
           <>
-            <Button asChild variant="outline"><Link href="/receiving">รับของ</Link></Button>
+            {direct ? (
+              <Button variant="outline" disabled title="ปิดชั่วคราว ระบบรับของให้อัตโนมัติตอนบันทึกการสั่งซื้อ">รับของ (ปิดชั่วคราว)</Button>
+            ) : (
+              <Button asChild variant="outline"><Link href="/receiving">รับของ</Link></Button>
+            )}
             {isAccounting && (
               <InvoiceDialog
                 pos={(pos ?? []).map(p => ({ id: p.id, po_no: p.po_no, total_amount: Number(p.total_amount), supplier_id: p.supplier_id, project_name: (p.projects as unknown as { name: string } | null)?.name ?? '' }))}

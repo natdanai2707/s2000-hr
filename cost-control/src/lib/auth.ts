@@ -43,6 +43,7 @@ export async function loadSettings(): Promise<Settings> {
     if (row.key === 'price_variance_threshold_pct') out.price_variance_threshold_pct = Number(row.value)
     if (row.key === 'pm_approval_limit') out.pm_approval_limit = Number(row.value)
     if (row.key === 'qty_over_boq_requires_management') out.qty_over_boq_requires_management = Boolean(row.value)
+    if (row.key === 'direct_purchase_mode') out.direct_purchase_mode = row.value === true
   }
   return out
 }
