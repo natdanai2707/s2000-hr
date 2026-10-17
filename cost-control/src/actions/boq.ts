@@ -4,9 +4,10 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireUser } from '@/lib/auth'
 import { readSheets, detectLayout, buildPreview } from '@/lib/boq/parse'
-import { autoDetectMapping, splitRows, type ColumnMapping } from '@/lib/boq/split'
+import { splitRows, type ColumnMapping } from '@/lib/boq/split'
 import { analyzeSheet, analysisEnabled } from '@/lib/boq/analyze'
 import { readStoredTemplate, type SheetLayout } from '@/lib/boq/layout'
+import { chooseLayout, templateHeaders } from '@/lib/boq/choose'
 import { safeObjectName } from '@/lib/storage'
 import type { BoqVersionType } from '@/lib/types'
 import { fail, type ActionResult } from './types'
@@ -75,40 +76,21 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
     if (parsed) templateMap.set(t.sheet_name, parsed)
   }
 
-  // ชีตที่เคยนำเข้ามาก่อนใช้ template เดิม ชีตใหม่ให้ Claude อ่านโครงให้ (ขนานกัน)
+  // Claude อ่านโครงทุกชีต (ขนานกัน) แม้ชีตนั้นจะมี template เพราะชื่อชีตซ้ำกันข้ามไฟล์ได้ (เช่น BOQ)
   // ถ้าไม่ได้ตั้ง ANTHROPIC_API_KEY หรือเรียกไม่สำเร็จ ตกไปใช้กฎตายตัวเหมือนเดิม
   const ANALYZE_LIMIT = 8
   const analyses = await Promise.all(
     raw.map(async (sheet, idx) => {
-      if (templateMap.has(sheet.name)) return null
       if (!analysisEnabled() || idx >= ANALYZE_LIMIT) return null
       return analyzeSheet(sheet.name, sheet.grid)
     })
   )
 
   const sheets: UploadPreviewSheet[] = raw.map((sheet, idx) => {
-    const tpl = templateMap.get(sheet.name) ?? null
     const ai = analyses[idx]
-
-    let layout: SheetLayout
-    let mapping: ColumnMapping
-    let source: UploadPreviewSheet['mapping_source']
-    if (tpl) {
-      layout = tpl.layout ?? detectLayout(sheet.grid)
-      mapping = tpl.columns as ColumnMapping
-      source = 'template'
-    } else if (ai) {
-      layout = ai.layout
-      mapping = ai.mapping
-      source = 'ai'
-    } else {
-      layout = detectLayout(sheet.grid)
-      mapping = autoDetectMapping(buildPreview(sheet.name, sheet.grid, layout).headers)
-      source = 'rules'
-    }
-
-    const preview = buildPreview(sheet.name, sheet.grid, layout)
-    const split = splitRows(preview.rows, mapping, 0)
+    const chosen = chooseLayout(sheet.name, sheet.grid, templateMap.get(sheet.name) ?? null, ai)
+    const { layout, mapping, preview, split } = chosen
+    const source = chosen.source
     const cost = split.items.reduce((sum, i) => sum + i.qty * i.unit_cost, 0)
     // ชีตที่มีคอลัมน์ราคาวัสดุหรือค่าแรงคือชีต BOQ จริง
     // ส่วนชีตปกและใบเสนอราคามีแต่ยอดรวม ถ้านำเข้าด้วยจะนับต้นทุนซ้ำ
@@ -125,7 +107,10 @@ export async function uploadBoqPreview(projectId: string, fd: FormData): Promise
       layout,
       mapping_source: source,
       ai_confidence: ai?.confidence ?? null,
-      ai_warnings: ai?.warnings ?? [],
+      ai_warnings: [
+        ...(chosen.template_rejected ? ['ชีตชื่อนี้เคยนำเข้ามาก่อน แต่หัวตารางของไฟล์นี้ต่างจากไฟล์เดิม จึงอ่านโครงใหม่แทนการใช้รูปแบบเดิม'] : []),
+        ...(ai?.warnings ?? []),
+      ],
       item_count: split.items.length,
       section_count: split.sections.length,
       cost_total: Math.round(cost * 100) / 100,
@@ -235,7 +220,7 @@ export async function importBoq(
       .upsert(
         {
           sheet_name: sheetInput.name,
-          mapping: { columns: sheetInput.mapping, layout: sheetInput.layout },
+          mapping: { columns: sheetInput.mapping, layout: sheetInput.layout, headers: templateHeaders(sheet.headers, sheetInput.mapping) },
           created_by: user.id,
         },
         { onConflict: 'sheet_name' }

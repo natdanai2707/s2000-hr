@@ -88,7 +88,7 @@ export function cellText(v: unknown): string {
 }
 
 // ตัดช่องว่าง จุด และเครื่องหมายวรรคตอนที่ทำให้จับคู่ชื่อคอลัมน์พลาด เช่น Q'TY -> qty
-function normalizeHeader(v: unknown): string {
+export function normalizeHeader(v: unknown): string {
   return cellText(v)
     .toLowerCase()
     .replace(/[\s'’`´.\-_/\\]/g, '')
