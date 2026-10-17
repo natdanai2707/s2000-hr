@@ -217,7 +217,10 @@ export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promis
     if (e instanceof Anthropic.AuthenticationError) return { status: 'failed', reason: 'API key ไม่ถูกต้อง' }
     if (e instanceof Anthropic.PermissionDeniedError) return { status: 'failed', reason: 'API key ไม่มีสิทธิ์ใช้งานโมเดลนี้' }
     if (e instanceof Anthropic.RateLimitError) return { status: 'failed', reason: 'เรียกใช้บ่อยเกินไปหรือเครดิตหมด' }
-    if (e instanceof Anthropic.APIError) return { status: 'failed', reason: `API ตอบกลับ ${e.status ?? 'ผิดพลาด'}` }
-    return { status: 'failed', reason: 'เชื่อมต่อ API ไม่ได้' }
+    if (e instanceof Anthropic.APIConnectionTimeoutError) return { status: 'failed', reason: 'Claude ตอบช้าเกินกำหนด' }
+    if (e instanceof Anthropic.APIConnectionError) return { status: 'failed', reason: 'เชื่อมต่อ API ไม่ได้' }
+    if (e instanceof Anthropic.APIError) return { status: 'failed', reason: `API ตอบกลับ ${e.status ?? ''} ${e.message}`.slice(0, 160) }
+    // เช่นคำตอบไม่ตรงรูปแบบที่กำหนด ให้ผู้ใช้เห็นข้อความจริงไว้ส่งต่อให้ผู้ดูแลระบบ
+    return { status: 'failed', reason: `อ่านคำตอบของ Claude ไม่ได้: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160) }
   }
 }
