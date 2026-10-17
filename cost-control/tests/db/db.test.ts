@@ -516,6 +516,29 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     })).rejects.toThrow(/check constraint/)
   })
 
+  it('ซื้อเป็นหน่วยอื่นโดยยังไม่ระบุตัวแปลง: นับยอดเงิน ไม่นับปริมาณ ไม่ตั้งธงเกิน BOQ', async () => {
+    const cur = (await client.query(`select confirmed_version_id from public.v_project_summary where project_id = $1`, [projectA])).rows[0].confirmed_version_id
+    // BOQ คิดเป็น m2 ปริมาณ 10 ต้นทุน 100 บาทต่อ m2 ซื้อเป็นชุดโดยยังไม่รู้ว่า 1 ชุดเท่ากับกี่ m2
+    const m2 = await runAs(client, mgmt, async q =>
+      (await q(`insert into public.boq_items (boq_version_id, item_no, description, unit, qty, unit_cost, category, sell_unit_price)
+                values ($1, '7.2', 'ฉนวนกันความร้อน', 'm2', 10, 100, 'material', 120) returning id`, [cur])).rows[0].id as string)
+    const flags = await runAs(client, mgmt, async q => {
+      const id = (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $2) returning id`, [projectA, mgmt])).rows[0].id as string
+      await q(`insert into public.purchase_request_items (pr_id, boq_item_id, description, qty, unit, unit_price, qty_factor)
+               values ($1, $2, 'ฉนวน', 50, 'ชุด', 500, null)`, [id, m2])
+      await q(`select public.submit_purchase_request($1)`, [id])
+      await q(`select public.record_direct_purchase($1)`, [id])
+      return (await q(`select qty_over_boq, price_over_threshold from public.purchase_request_items where pr_id = $1`, [id])).rows[0]
+    })
+    // 50 ชุด × 500 = 25,000 เกินงบ 1,000 บาท แต่เทียบปริมาณและราคาต่อหน่วยไม่ได้ จึงไม่ต้องใส่เหตุผล
+    expect(flags).toEqual({ qty_over_boq: false, price_over_threshold: false })
+    const row = (await client.query(`select budget, actual, qty_ordered, qty_received from public.v_boq_item_costs where boq_item_id = $1`, [m2])).rows[0]
+    expect(n(row.budget)).toBe(1000)
+    expect(n(row.actual)).toBe(25000)
+    expect(n(row.qty_ordered)).toBe(0)
+    expect(n(row.qty_received)).toBe(0)
+  })
+
   it('แนบไฟล์เอกสารจัดซื้อไว้กับรายการสั่งซื้อได้', async () => {
     const path = `projects/${projectA}/purchases/test.jpg`
     const id = await runAs(client, engA, async q =>

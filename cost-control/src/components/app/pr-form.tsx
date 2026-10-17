@@ -64,10 +64,17 @@ function newLine(): Line {
   return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '', buy_other: false, buy_unit: '', factor: '', doc_text: '', doc_note: '' }
 }
 
-function lineFactor(l: Line): number {
+// null = ซื้อเป็นหน่วยอื่นแต่ยังไม่ระบุตัวแปลง (ผู้ใช้เว้นว่างได้) NaN = กรอกค่าที่ใช้ไม่ได้
+function lineFactor(l: Line): number | null {
   if (!l.buy_other) return 1
+  if (l.factor.trim() === '') return null
   const f = Number(l.factor)
   return f > 0 ? f : NaN
+}
+
+function knownFactor(l: Line): number | null {
+  const f = lineFactor(l)
+  return f === null || Number.isNaN(f) ? null : f
 }
 
 function round2(n: number): number {
@@ -91,17 +98,15 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
   // เทียบกับ BOQ ในหน่วยของ BOQ เสมอ ยอดเงินเท่าเดิมไม่ว่าจะซื้อเป็นหน่วยไหน
   const evaluated = lines.map(l => {
     const item = items.find(i => i.id === l.boq_item_id)
-    if (!item) return { line: l, item: null, ev: null, boq: null }
-    const f = lineFactor(l)
-    const boq = toBoqUnits(Number(l.qty) || 0, Number(l.unit_price) || 0, Number.isNaN(f) ? 1 : f)
-    const ev = evaluateLine(
-      { qty: boq.qty, unitPrice: boq.unitPrice, boqQty: item.qty, boqUnitCost: item.unit_cost, qtyOrdered: item.qty_ordered, isOffBoq: item.is_off_boq, varianceReason: l.variance_reason },
-      settings
-    )
-    return { line: l, item, ev, boq }
+    if (!item) return { line: l, item: null, ev: null, boq: null, input: null, unitsUnknown: false }
+    const f = knownFactor(l)
+    const unitsUnknown = l.buy_other && f === null
+    const boq = toBoqUnits(Number(l.qty) || 0, Number(l.unit_price) || 0, f ?? 1)
+    const input = { qty: boq.qty, unitPrice: boq.unitPrice, boqQty: item.qty, boqUnitCost: item.unit_cost, qtyOrdered: item.qty_ordered, isOffBoq: item.is_off_boq, varianceReason: l.variance_reason, unitsUnknown }
+    return { line: l, item, ev: evaluateLine(input, settings), boq, input, unitsUnknown }
   })
   const routing = routePurchaseRequest(
-    evaluated.filter(e => e.item).map(e => ({ qty: e.boq!.qty, unitPrice: e.boq!.unitPrice, boqQty: e.item!.qty, boqUnitCost: e.item!.unit_cost, qtyOrdered: e.item!.qty_ordered, isOffBoq: e.item!.is_off_boq, varianceReason: e.line.variance_reason })),
+    evaluated.filter(e => e.item).map(e => e.input!),
     settings
   )
 
@@ -117,7 +122,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
 
   // เปิดปิดการซื้อเป็นหน่วยอื่น แปลงปริมาณและราคาที่กรอกไว้ให้ตามหน่วยใหม่
   function toggleBuyOther(line: Line, item: PrFormItem, on: boolean) {
-    const f = on ? Number(line.factor) || suggestConversion(item.description, item.unit)?.factor || 0 : lineFactor(line)
+    const f = on ? Number(line.factor) || suggestConversion(item.description, item.unit)?.factor || 0 : knownFactor(line) ?? 0
     const ok = f > 0
     update(line.key, {
       buy_other: on,
@@ -169,7 +174,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
       const price = Number(e.line.unit_price)
       const factor = lineFactor(e.line)
       if (e.line.buy_other && !e.line.buy_unit.trim()) return 'กรุณาระบุหน่วยที่ซื้อ'
-      if (Number.isNaN(factor)) return 'กรุณาระบุว่าหน่วยที่ซื้อหนึ่งหน่วยเท่ากับกี่หน่วยใน BOQ'
+      if (factor !== null && Number.isNaN(factor)) return 'ตัวแปลงหน่วยต้องมากกว่า 0 หรือเว้นว่างไว้'
       if (!(qty > 0)) return 'ปริมาณต้องมากกว่า 0'
       if (!(price >= 0) || e.line.unit_price === '') return 'กรุณากรอกราคาต่อหน่วย'
       if (e.ev!.requiresReason && !e.line.variance_reason.trim()) return 'กรุณาระบุเหตุผลสำหรับรายการที่เกิน BOQ เกินราคาที่ทดไว้ หรือนอก BOQ'
@@ -240,7 +245,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
 
       {projectId && online && <PurchaseDocumentReader key={projectId} projectId={projectId} onRead={applyDocument} />}
 
-      {evaluated.map(({ line, item, ev, boq }, idx) => {
+      {evaluated.map(({ line, item, ev, boq, unitsUnknown }, idx) => {
         const q = line.search.trim().toLowerCase()
         const matches = q && !item ? items.filter(i => `${i.item_no ?? ''} ${i.description} ${i.unit ?? ''}`.toLowerCase().includes(q)).slice(0, 12) : []
         return (
@@ -303,7 +308,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
                   label={`1 ${line.buy_unit || 'หน่วย'} = กี่ ${item.unit ?? 'หน่วย BOQ'}`}
                   hint={suggestConversion(item.description, item.unit) ? `คำนวณจาก ${suggestConversion(item.description, item.unit)!.note}` : undefined}
                 >
-                  <Input type="number" step="0.001" min="0" inputMode="decimal" value={line.factor} onChange={e => update(line.key, { factor: e.target.value })} required />
+                  <Input type="number" step="0.001" min="0" inputMode="decimal" value={line.factor} onChange={e => update(line.key, { factor: e.target.value })} placeholder="ไม่ทราบ เว้นว่างได้" />
                 </FormField>
               </div>
             )}
@@ -318,13 +323,25 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
               required
               invalid={!!ev?.priceOverThreshold}
             />
-            {item && line.buy_other && boq && !Number.isNaN(lineFactor(line)) && line.qty !== '' && (
+            {item && line.buy_other && boq && knownFactor(line) !== null && line.qty !== '' && (
               <p className="text-xs text-muted-foreground tabular">
                 = {formatQty(boq.qty)} {item.unit ?? ''} · ราคา {formatBaht(boq.unitPrice)} บาทต่อ {item.unit ?? 'หน่วย'} (ไม่รวม VAT)
               </p>
             )}
 
-            {item && ev && (line.qty !== '' || line.unit_price !== '') && (
+            {item && ev && unitsUnknown && (line.qty !== '' || line.unit_price !== '') && (
+              <div className="rounded-lg border border-border bg-muted/50 p-3 text-sm space-y-1">
+                <div>
+                  ยังไม่ระบุว่า 1 {line.buy_unit || 'หน่วย'} เท่ากับกี่ {item.unit ?? 'หน่วย BOQ'} ระบบนับยอดเงินเข้าต้นทุนของรายการนี้ครบ
+                  แต่ยังไม่เทียบปริมาณและราคาต่อหน่วยกับ BOQ ดูทุนเทียบราคาขายของรายการนี้ได้ที่หน้าสรุปต้นทุน
+                </div>
+                <div className="text-right text-xs text-muted-foreground tabular">
+                  รวม {formatBaht(ev.amount)} บาท (ไม่รวม VAT) · {formatBaht(addVat(ev.amount))} บาท (รวม VAT)
+                </div>
+              </div>
+            )}
+
+            {item && ev && !unitsUnknown && (line.qty !== '' || line.unit_price !== '') && (
               <div className="rounded-lg border border-border bg-muted/50 p-3 text-sm space-y-2">
                 <div className="grid grid-cols-4 gap-1 text-center">
                   <div><div className="text-xs text-muted-foreground">ตาม BOQ</div><div className="tabular">{item.is_off_boq ? '-' : formatQty(item.qty)}</div></div>

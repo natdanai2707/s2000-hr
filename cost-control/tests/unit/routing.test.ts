@@ -14,6 +14,11 @@ describe('evaluateLine: เปรียบเทียบกับ BOQ', () => {
     expect(ev.amount).toBe(1000)
   })
 
+  it('ซื้อเป็นหน่วยอื่นโดยยังไม่ระบุตัวแปลง ไม่เทียบปริมาณและราคาต่อหน่วย นับเฉพาะยอดเงิน', () => {
+    const ev = evaluateLine({ qty: 50, unitPrice: 500, boqQty: 10, boqUnitCost: 100, qtyOrdered: 0, isOffBoq: false, unitsUnknown: true }, settings)
+    expect(ev).toMatchObject({ qtyOverBoq: false, priceOverThreshold: false, priceBelow: false, requiresReason: false, amount: 25000 })
+  })
+
   it('แจ้งเกิน BOQ x หน่วย เมื่อ สั่งแล้ว + ครั้งนี้ > ปริมาณ BOQ', () => {
     const ev = evaluateLine({ qty: 60, unitPrice: 100, boqQty: 100, boqUnitCost: 100, qtyOrdered: 50, isOffBoq: false }, settings)
     expect(ev.qtyOverBoq).toBe(true)

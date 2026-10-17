@@ -70,7 +70,10 @@ export default async function PoDetailPage({ params }: { params: Promise<{ id: s
                 <span className="tabular">{formatQty(it.qty)} {it.unit ?? ''} × {formatBaht(it.unit_price)}</span>
                 <span className="tabular font-medium">{formatBaht(Number(it.qty) * Number(it.unit_price))}</span>
               </div>
-              {Number(it.qty_factor ?? 1) !== 1 && (
+              {it.qty_factor === null && (
+                <div className="text-xs text-muted-foreground">ยังไม่ระบุว่า 1 {it.unit ?? 'หน่วย'} เท่ากับกี่ {b?.unit ?? 'หน่วย BOQ'} นับเฉพาะยอดเงิน ไม่เทียบปริมาณและราคาต่อหน่วยกับ BOQ</div>
+              )}
+              {it.qty_factor !== null && Number(it.qty_factor ?? 1) !== 1 && (
                 <div className="text-xs text-muted-foreground tabular">
                   1 {it.unit ?? 'หน่วย'} = {formatQty(it.qty_factor)} {b?.unit ?? ''} · เทียบ BOQ = {formatQty(Number(it.qty) * Number(it.qty_factor))} {b?.unit ?? ''}
                 </div>
