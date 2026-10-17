@@ -1,4 +1,5 @@
 import { requireUser, loadSettings } from '@/lib/auth'
+import { usesDirectPurchase } from '@/lib/types'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader, EmptyState } from '@/components/app/common'
 import { PrForm, type PrFormProject } from '@/components/app/pr-form'
@@ -8,6 +9,7 @@ export default async function NewPrPage({ searchParams }: { searchParams: Promis
   const { project } = await searchParams
   const supabase = await createClient()
   const settings = await loadSettings()
+  const direct = usesDirectPurchase(settings, user.profile.role)
 
   // โครงการที่ผู้ใช้เป็นสมาชิกและมี BOQ ยืนยันแล้ว (RLS กรองให้แล้ว)
   const [{ data: memberships }, { data: suppliers }] = await Promise.all([
@@ -49,11 +51,15 @@ export default async function NewPrPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="max-w-2xl">
-      <PageHeader title="สร้างใบขอซื้อ" backHref="/pr" />
+      <PageHeader
+        title={direct ? 'บันทึกการสั่งซื้อ' : 'สร้างใบขอซื้อ'}
+        subtitle={direct ? 'เลือกรายการ BOQ ใส่ปริมาณและราคา ระบบเทียบกับ BOQ และราคาที่ทดไว้ให้ทันที' : undefined}
+        backHref="/pr"
+      />
       {projects.length === 0 ? (
         <EmptyState title="ไม่มีโครงการที่สร้างใบขอซื้อได้" hint="ต้องเป็นสมาชิกโครงการที่ BOQ ยืนยันแล้ว" />
       ) : (
-        <PrForm projects={projects} suppliers={suppliers ?? []} settings={settings} initialProjectId={project ?? null} />
+        <PrForm projects={projects} suppliers={suppliers ?? []} settings={settings} initialProjectId={project ?? null} directMode={direct} />
       )}
     </div>
   )

@@ -53,7 +53,7 @@ function newLine(): Line {
   return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '' }
 }
 
-export function PrForm({ projects, suppliers, settings, initialProjectId }: { projects: PrFormProject[]; suppliers: { id: string; name: string }[]; settings: Settings; initialProjectId: string | null }) {
+export function PrForm({ projects, suppliers, settings, initialProjectId, directMode = false }: { projects: PrFormProject[]; suppliers: { id: string; name: string }[]; settings: Settings; initialProjectId: string | null; directMode?: boolean }) {
   const router = useRouter()
   const [projectId, setProjectId] = useState(initialProjectId && projects.some(p => p.id === initialProjectId) ? initialProjectId : projects.length === 1 ? projects[0].id : '')
   const [lines, setLines] = useState<Line[]>([newLine()])
@@ -265,18 +265,25 @@ export function PrForm({ projects, suppliers, settings, initialProjectId }: { pr
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4 text-sm">
-        <div className="flex justify-between"><span className="text-muted-foreground">มูลค่ารวม</span><span className="tabular font-semibold">{formatBaht(routing.total)} บาท</span></div>
-        <div className="flex justify-between mt-1">
-          <span className="text-muted-foreground">เส้นทางอนุมัติ</span>
-          <span>{routing.route === 'pm_only' ? 'ผู้จัดการโครงการ' : 'ผู้จัดการโครงการ แล้วต่อด้วยฝ่ายบริหาร'}</span>
-        </div>
-        <p className="text-xs text-muted-foreground mt-1">
-          วงเงินผู้จัดการโครงการ {formatBaht(settings.pm_approval_limit)} บาท {settings.qty_over_boq_requires_management ? '· เกิน BOQ ต้องผ่านฝ่ายบริหาร' : ''}
-        </p>
+        <div className="flex justify-between"><span className="text-muted-foreground">มูลค่ารวม (ไม่รวม VAT)</span><span className="tabular font-semibold">{formatBaht(routing.total)} บาท</span></div>
+        <div className="flex justify-between mt-1"><span className="text-muted-foreground">มูลค่ารวม (รวม VAT)</span><span className="tabular">{formatBaht(addVat(routing.total))} บาท</span></div>
+        {directMode ? (
+          <p className="text-xs text-muted-foreground mt-2">บันทึกแล้วนับเป็นต้นทุนจริงของโครงการทันที ไม่ต้องอนุมัติ ออกใบสั่งซื้อ หรือรับของ</p>
+        ) : (
+          <>
+            <div className="flex justify-between mt-1">
+              <span className="text-muted-foreground">เส้นทางอนุมัติ</span>
+              <span>{routing.route === 'pm_only' ? 'ผู้จัดการโครงการ' : 'ผู้จัดการโครงการ แล้วต่อด้วยฝ่ายบริหาร'}</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              วงเงินผู้จัดการโครงการ {formatBaht(settings.pm_approval_limit)} บาท {settings.qty_over_boq_requires_management ? '· เกิน BOQ ต้องผ่านฝ่ายบริหาร' : ''}
+            </p>
+          </>
+        )}
       </div>
 
       <Button type="submit" size="lg" className="w-full" disabled={pending}>
-        {pending ? 'กำลังส่ง' : online ? 'ส่งขออนุมัติ' : 'บันทึกไว้ส่งเมื่อออนไลน์'}
+        {pending ? 'กำลังบันทึก' : !online ? 'บันทึกไว้ส่งเมื่อออนไลน์' : directMode ? 'บันทึกการสั่งซื้อ' : 'ส่งขออนุมัติ'}
       </Button>
     </form>
   )

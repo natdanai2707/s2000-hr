@@ -153,10 +153,18 @@ export interface Settings {
   price_variance_threshold_pct: number
   pm_approval_limit: number
   qty_over_boq_requires_management: boolean
+  // ช่วงใช้งานคนเดียว: บันทึกการสั่งซื้อครั้งเดียวได้ทั้งอนุมัติ ใบสั่งซื้อ และรับของ
+  direct_purchase_mode: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   price_variance_threshold_pct: 5,
   pm_approval_limit: 50000,
   qty_over_boq_requires_management: true,
+  direct_purchase_mode: false,
+}
+
+// โหมดบันทึกซื้อตรงใช้ได้เฉพาะฝ่ายบริหารและผู้ดูแลระบบ บทบาทอื่นยังใช้ขั้นตอนขออนุมัติตามปกติ
+export function usesDirectPurchase(settings: Settings, role: UserRole): boolean {
+  return settings.direct_purchase_mode && (role === 'management' || role === 'admin')
 }

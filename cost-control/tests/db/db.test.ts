@@ -395,6 +395,55 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     await client.query('reset role')
   })
 
+  it('บันทึกซื้อตรง: ฝ่ายบริหารบันทึกครั้งเดียวได้ทั้งอนุมัติ ใบสั่งซื้อ และรับของ ต้นทุนเข้าเป็นต้นทุนจริงทันที', async () => {
+    const steel = (await client.query(
+      `select x.boq_item_id, x.actual, x.committed from public.v_boq_item_costs x join public.v_project_summary s on s.confirmed_version_id = x.boq_version_id
+        where s.project_id = $1 and x.description = 'เหล็ก H-Beam'`, [projectA])).rows[0]
+    await client.query(`insert into public.project_members (project_id, user_id) values ($1, $2) on conflict do nothing`, [projectA, mgmt])
+
+    const newPr = async (userId: string) => runAs(client, userId, async q => {
+      const id = (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $2) returning id`, [projectA, userId])).rows[0].id as string
+      await q(`insert into public.purchase_request_items (pr_id, boq_item_id, description, qty, unit, unit_price, supplier_name) values ($1, $2, 'เหล็ก H-Beam', 1, 'ตัน', 30000, 'บจก.เหล็กใต้')`, [id, steel.boq_item_id])
+      await q(`select public.submit_purchase_request($1)`, [id])
+      return id
+    })
+
+    // วิศวกรใช้ทางลัดนี้ไม่ได้ ต้องผ่านการอนุมัติตามปกติ
+    const engPr = await newPr(engA)
+    await expect(runAs(client, engA, q => q(`select public.record_direct_purchase($1)`, [engPr]))).rejects.toThrow(/ฝ่ายบริหาร/)
+
+    const pr = await newPr(mgmt)
+    const poId = await runAs(client, mgmt, async q => (await q(`select public.record_direct_purchase($1) as id`, [pr])).rows[0].id as string)
+
+    expect((await client.query(`select status from public.purchase_requests where id = $1`, [pr])).rows[0].status).toBe('approved')
+    expect((await client.query(`select step from public.approvals where document_id = $1`, [pr])).rows.map(r => r.step)).toEqual(['direct'])
+    const po = (await client.query(`select status, total_amount, s.name as supplier from public.purchase_orders po left join public.suppliers s on s.id = po.supplier_id where po.id = $1`, [poId])).rows[0]
+    expect(po).toMatchObject({ status: 'received', supplier: 'บจก.เหล็กใต้' })
+    expect(n(po.total_amount)).toBe(30000)
+
+    const after = (await client.query(`select actual, committed from public.v_boq_item_costs where boq_item_id = $1`, [steel.boq_item_id])).rows[0]
+    expect(n(after.actual)).toBe(n(steel.actual) + 30000)
+    expect(n(after.committed)).toBe(n(steel.committed))
+
+    // เรียกซ้ำกับใบเดิมไม่ได้ และปิดโหมดแล้วใช้ไม่ได้
+    await expect(runAs(client, mgmt, q => q(`select public.record_direct_purchase($1)`, [pr]))).rejects.toThrow(/สถานะ/)
+    await client.query(`update public.settings set value = 'false'::jsonb where key = 'direct_purchase_mode'`)
+    const pr2 = await newPr(mgmt)
+    await expect(runAs(client, mgmt, q => q(`select public.record_direct_purchase($1)`, [pr2]))).rejects.toThrow(/ไม่ได้เปิดโหมด/)
+    await client.query(`update public.settings set value = 'true'::jsonb where key = 'direct_purchase_mode'`)
+
+    // บันทึกผิด ยกเลิกได้ ต้องมีเหตุผล ต้นทุนจริงกลับไปเท่าเดิม และประวัติยังอยู่ใน audit log
+    await expect(runAs(client, mgmt, q => q(`select public.void_direct_purchase($1, '')`, [pr]))).rejects.toThrow(/เหตุผล/)
+    await expect(runAs(client, engA, q => q(`select public.void_direct_purchase($1, 'x')`, [pr]))).rejects.toThrow(/ฝ่ายบริหาร/)
+    await runAs(client, mgmt, q => q(`select public.void_direct_purchase($1, 'กรอกราคาผิด')`, [pr]))
+    const voided = (await client.query(`select actual from public.v_boq_item_costs where boq_item_id = $1`, [steel.boq_item_id])).rows[0]
+    expect(n(voided.actual)).toBe(n(steel.actual))
+    expect((await client.query(`select status from public.purchase_requests where id = $1`, [pr])).rows[0].status).toBe('cancelled')
+    expect((await client.query(`select status from public.purchase_orders where id = $1`, [poId])).rows[0].status).toBe('cancelled')
+    const logged = (await client.query(`select count(*)::int as c from public.audit_logs where table_name = 'goods_receipt_items' and action = 'DELETE'`)).rows[0].c
+    expect(logged).toBeGreaterThan(0)
+  })
+
   it('ยกเลิกการยืนยัน BOQ ได้เมื่อโครงการยังไม่มีเอกสารต้นทุน แล้วกลับมาแก้ตัวเลขได้', async () => {
     const vB = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectB])).rows[0].id
     const itemB = (await client.query(`select id from public.boq_items where boq_version_id = $1 and not is_off_boq`, [vB])).rows[0].id

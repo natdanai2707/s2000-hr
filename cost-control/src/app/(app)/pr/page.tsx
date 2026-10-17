@@ -1,10 +1,10 @@
 import Link from 'next/link'
-import { requireUser } from '@/lib/auth'
+import { requireUser, loadSettings } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader, EmptyState, StatusBadge, Money } from '@/components/app/common'
 import { Button } from '@/components/ui/button'
 import { formatThaiDate } from '@/lib/date'
-import { PR_STATUS_LABELS, type PrStatus } from '@/lib/types'
+import { PR_STATUS_LABELS, usesDirectPurchase, type PrStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const FILTERS: { key: string; label: string; statuses: PrStatus[] }[] = [
@@ -27,10 +27,12 @@ export default async function PrListPage({ searchParams }: { searchParams: Promi
   if (f.statuses.length) q = q.in('status', f.statuses)
   if (mine === '1') q = q.eq('requested_by', user.id)
   const { data: prs } = await q
+  const direct = usesDirectPurchase(await loadSettings(), user.profile.role)
+  const newLabel = direct ? 'บันทึกการสั่งซื้อ' : 'สร้างใบขอซื้อ'
 
   return (
     <div>
-      <PageHeader title="ใบขอซื้อ" actions={<Button asChild><Link href="/pr/new">สร้างใบขอซื้อ</Link></Button>} />
+      <PageHeader title={direct ? 'รายการสั่งซื้อ' : 'ใบขอซื้อ'} actions={<Button asChild><Link href="/pr/new">{newLabel}</Link></Button>} />
       <div className="mb-3 flex flex-wrap gap-2 text-sm">
         {FILTERS.map(x => (
           <Link key={x.key} href={`/pr?filter=${x.key}${mine === '1' ? '&mine=1' : ''}`} className={cn('rounded-full border px-3 py-1', x.key === f.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-card')}>
@@ -42,7 +44,7 @@ export default async function PrListPage({ searchParams }: { searchParams: Promi
         </Link>
       </div>
       {!prs?.length ? (
-        <EmptyState title="ไม่มีใบขอซื้อ" action={<Button asChild><Link href="/pr/new">สร้างใบขอซื้อ</Link></Button>} />
+        <EmptyState title={direct ? 'ยังไม่มีรายการสั่งซื้อ' : 'ไม่มีใบขอซื้อ'} action={<Button asChild><Link href="/pr/new">{newLabel}</Link></Button>} />
       ) : (
         <div className="rounded-xl border border-border bg-card divide-y divide-border">
           {prs.map(pr => {

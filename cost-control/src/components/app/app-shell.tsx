@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ROLE_LABELS, type Profile } from '@/lib/types'
-import { SIDEBAR_ITEMS, BOTTOM_ITEMS, visibleFor } from './nav-config'
+import { SIDEBAR_ITEMS, BOTTOM_ITEMS, visibleFor, type NavItem } from './nav-config'
 import { createClient } from '@/lib/supabase/client'
 import { OfflineSync } from './offline-sync'
 import { ServiceWorkerRegister } from './sw-register'
@@ -14,6 +14,7 @@ interface Props {
   profile: Profile
   pendingCount: number
   unreadCount: number
+  directMode: boolean
   children: ReactNode
 }
 
@@ -22,11 +23,12 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + '/')
 }
 
-export function AppShell({ profile, pendingCount, unreadCount, children }: Props) {
+export function AppShell({ profile, pendingCount, unreadCount, directMode, children }: Props) {
   const pathname = usePathname()
   const router = useRouter()
   const [moreOpen, setMoreOpen] = useState(false)
-  const sidebar = visibleFor(SIDEBAR_ITEMS, profile.role)
+  const sidebar = visibleFor(SIDEBAR_ITEMS, profile.role, directMode)
+  const paused = (item: NavItem) => directMode && item.pausedInDirectMode
 
   async function signOut() {
     const supabase = createClient()
@@ -35,7 +37,7 @@ export function AppShell({ profile, pendingCount, unreadCount, children }: Props
     router.refresh()
   }
 
-  const bottomItems = BOTTOM_ITEMS.map(item => ({ ...item, count: item.href === '/approvals' ? pendingCount : 0 }))
+  const bottomItems = visibleFor(BOTTOM_ITEMS, profile.role, directMode).map(item => ({ ...item, count: item.href === '/approvals' ? pendingCount : 0 }))
 
   return (
     <div className="min-h-screen md:flex">
@@ -49,7 +51,9 @@ export function AppShell({ profile, pendingCount, unreadCount, children }: Props
           <div className="text-xs text-muted-foreground">{ROLE_LABELS[profile.role]}</div>
         </div>
         <nav className="flex-1 overflow-y-auto py-2">
-          {sidebar.map(item => (
+          {sidebar.map(item => paused(item) ? (
+            <PausedItem key={item.href} label={item.label} className="px-5 py-2.5" />
+          ) : (
             <Link
               key={item.href}
               href={item.href}
@@ -112,7 +116,9 @@ export function AppShell({ profile, pendingCount, unreadCount, children }: Props
         </div>
         {moreOpen && (
           <div className="absolute bottom-full inset-x-0 bg-card border-t border-border max-h-[60vh] overflow-y-auto">
-            {sidebar.map(item => (
+            {sidebar.map(item => paused(item) ? (
+              <PausedItem key={item.href} label={item.label} className="px-5 py-3 border-b border-border" />
+            ) : (
               <Link
                 key={item.href}
                 href={item.href}
@@ -132,5 +138,14 @@ export function AppShell({ profile, pendingCount, unreadCount, children }: Props
         )}
       </nav>
     </div>
+  )
+}
+
+// เมนูที่ปิดชั่วคราวระหว่างโหมดบันทึกซื้อตรง แสดงเป็นสีเทาและกดไม่ได้ เปิดกลับได้เมื่อให้พนักงานใช้ขั้นตอนเต็ม
+function PausedItem({ label, className }: { label: string; className?: string }) {
+  return (
+    <span aria-disabled="true" className={cn('block text-sm text-muted-foreground/60 cursor-not-allowed select-none', className)}>
+      {label} <span className="text-xs">(ปิดชั่วคราว)</span>
+    </span>
   )
 }

@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { requireUser } from '@/lib/auth'
+import { requireUser, loadSettings } from '@/lib/auth'
+import { usesDirectPurchase } from '@/lib/types'
 import { notify, approverIdsFor } from '@/lib/notifications'
 import { formatBaht } from '@/lib/format'
 import { fail, type ActionResult } from './types'
@@ -93,6 +94,21 @@ export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<A
     return fail(subErr)
   }
 
+  // โหมดบันทึกซื้อตรง: อนุมัติ ออกใบสั่งซื้อ และรับของให้ในขั้นตอนเดียว ไม่ต้องแจ้งผู้อนุมัติ
+  if (usesDirectPurchase(await loadSettings(), user.profile.role)) {
+    const { error: directErr } = await supabase.rpc('record_direct_purchase', { p_pr_id: pr.id })
+    if (directErr) {
+      // RLS ลบได้เฉพาะใบร่าง ถอยสถานะกลับเป็นร่างก่อนลบ ไม่ให้เหลือใบค้างรออนุมัติ
+      await supabase.from('purchase_requests').update({ status: 'draft' }).eq('id', pr.id)
+      await supabase.from('purchase_requests').delete().eq('id', pr.id)
+      return fail(directErr)
+    }
+    revalidatePath('/pr')
+    revalidatePath('/')
+    revalidatePath(`/projects/${payload.project_id}`)
+    return { ok: true, data: { id: pr.id, pr_no: pr.pr_no, status: 'approved' } }
+  }
+
   const { data: full } = await supabase.from('purchase_requests').select('total_amount, projects(name)').eq('id', pr.id).single()
   const projectName = (full?.projects as unknown as { name: string } | null)?.name ?? ''
   await notify({
@@ -167,5 +183,19 @@ export async function cancelPurchaseRequest(prId: string): Promise<ActionResult>
   if (error) return fail(error)
   revalidatePath('/pr')
   revalidatePath(`/pr/${prId}`)
+  return { ok: true, data: undefined }
+}
+
+// ยกเลิกรายการที่บันทึกซื้อตรงผิด ต้นทุนจริงลดลงตาม ต้องระบุเหตุผล
+export async function voidDirectPurchase(prId: string, reason: string): Promise<ActionResult> {
+  await requireUser()
+  const supabase = await createClient()
+  const { data: pr } = await supabase.from('purchase_requests').select('project_id').eq('id', prId).maybeSingle()
+  const { error } = await supabase.rpc('void_direct_purchase', { p_pr_id: prId, p_reason: reason })
+  if (error) return fail(error)
+  revalidatePath('/pr')
+  revalidatePath(`/pr/${prId}`)
+  revalidatePath('/')
+  if (pr) revalidatePath(`/projects/${pr.project_id}`)
   return { ok: true, data: undefined }
 }
