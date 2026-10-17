@@ -98,6 +98,19 @@ describe('เรียก Claude อ่านโครงชีต', () => {
     expect(last!.headers['anthropic-workspace-id']).toBeUndefined()
   })
 
+  it('key ไม่ได้ผูก workspace บอกว่าเซิร์ฟเวอร์เห็นตัวแปร ANTHROPIC_WORKSPACE_ID หรือไม่', async () => {
+    reply = { status: 400, body: { type: 'error', error: { type: 'invalid_request_error', message: 'This API key is not scoped to a workspace' } } }
+    const missing = await analyzeSheet('BOQ', grid)
+    expect(missing.status === 'failed' && missing.reason).toContain('ยังไม่เห็นตัวแปร ANTHROPIC_WORKSPACE_ID')
+    process.env.ANTHROPIC_WORKSPACE_ID = 'wrkspc_abc'
+    try {
+      const sent = await analyzeSheet('BOQ', grid)
+      expect(sent.status === 'failed' && sent.reason).toContain('ส่ง workspace wrkspc_abc ไปแล้ว')
+    } finally {
+      delete process.env.ANTHROPIC_WORKSPACE_ID
+    }
+  })
+
   it('API ตอบ key ผิด บอกสาเหตุให้ผู้ใช้เห็น', async () => {
     reply = { status: 401, body: { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } } }
     await expect(analyzeSheet('BOQ', grid)).resolves.toEqual({ status: 'failed', reason: 'API key ไม่ถูกต้อง' })
