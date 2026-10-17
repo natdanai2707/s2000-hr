@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { verifySheet, suggestContract, classifyLabel } from '@/lib/boq/verify'
+import { verifySheet, suggestContract, classifyLabel, type SummaryKind } from '@/lib/boq/verify'
 import { detectLayout, buildPreview } from '@/lib/boq/parse'
 import { autoDetectMapping } from '@/lib/boq/split'
 
@@ -66,6 +66,26 @@ describe('ตรวจตัวเลขใน BOQ', () => {
     const issues = check(g).issues
     expect(issues.find(i => i.row === 8)?.expected).toBe(3920)
     expect(issues.find(i => i.row === 9)?.expected).toBe(52500)
+  })
+
+  it('ป้ายแถวจาก Claude: บรรทัดหมวดในบล็อกสรุป และตัวเลขที่คำนวณเล่นนอกตาราง ไม่ถูกนับเป็นยอดผิด', () => {
+    // จำลองไฟล์ V098: Claude ติดป้าย section_total ให้บรรทัด "A หมวดงานราง" ในบล็อกสรุป (แถว 6)
+    // และติดป้าย vat ให้แถวหมายเหตุที่มี "Vat 56,624.40" อยู่คอลัมน์ M นอกตาราง
+    const g = s2000()
+    g.splice(9, 0, ['หมายเหตุ', '', '', '', '', '', '', '', '', '', '', '', 'Vat', 56624.4])
+    const layout = detectLayout(g)
+    const mapping = autoDetectMapping(buildPreview('BOQ', g, layout).headers)
+    const roles = new Map<number, SummaryKind>([
+      [6, 'section_total'],
+      [7, 'sub_total'],
+      [8, 'overhead'],
+      [9, 'total'],
+      [10, 'vat'],
+      [15, 'section_total'],
+    ])
+    const r = verifySheet(g, { ...layout, data_start_row: 11 }, mapping, { roles })
+    expect(r.issues).toEqual([])
+    expect(r.contract?.amount).toBe(52920)
   })
 
   it('ใบเสนอราคาที่มีส่วนลดและ VAT: มูลค่าสัญญาคือยอดหลังส่วนลดก่อน VAT', () => {

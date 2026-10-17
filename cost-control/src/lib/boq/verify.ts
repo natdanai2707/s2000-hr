@@ -84,9 +84,10 @@ function percentOf(label: string): number | null {
   return m ? Number(m[1]) : null
 }
 
+// ถ้ามีคอลัมน์ยอดรวม อ่านจากคอลัมน์นั้นเท่านั้น ไม่อ่านตัวเลขที่ผู้ประมาณราคาคำนวณเล่นไว้ด้านขวานอกตาราง
+// (เช่นไฟล์ V098 แถว 21 มี "Vat 4,494,000" ในคอลัมน์ N ซึ่งเป็นยอดรวม VAT ไม่ใช่ VAT ของตาราง)
 function rowValue(row: unknown[], mapping: ColumnMapping, labelCol: number): number | null {
-  const atTotal = mapping.total != null ? cellNumber(row[mapping.total]) : null
-  if (atTotal !== null) return atTotal
+  if (mapping.total != null) return cellNumber(row[mapping.total])
   for (let c = labelCol + 1; c < row.length; c++) {
     const n = cellNumber(row[c])
     if (n !== null) return n
@@ -167,6 +168,10 @@ export function verifySheet(grid: unknown[][], layout: SheetLayout, mapping: Col
       const value = rowValue(row, mapping, label.col)
       if (inSummaryBlock && /^total\b/i.test(label.text)) inSummaryBlock = false
       if (value === null) continue
+
+      // บรรทัดหมวดในบล็อกสรุปด้านบน (เช่น "A หมวดงาน... 1 L/S") ไม่ใช่ยอดรวมของรายการที่อ่านมาแล้ว
+      // รายการจริงอยู่ใต้บล็อกนี้ ยอดหมวดตัวจริงจะถูกตรวจตอนเจอท้ายหมวดในรายละเอียด
+      if (inSummaryZone && (kind === 'section_total' || kind === 'group_total')) continue
 
       const isGeneric = kind === 'total' && !opts.roles?.has(r) && !adjustedSinceSection
       if (!inSummaryZone && (kind === 'overhead' || kind === 'discount' || kind === 'vat')) adjustedSinceSection = true
