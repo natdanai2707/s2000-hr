@@ -64,9 +64,17 @@ export function ProjectForm({ branches, project }: { branches: Branch[]; project
         </FormField>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField label="มูลค่าสัญญา (ไม่รวม VAT)" hint="ใช้คำนวณกำไรเทียบกับต้นทุนใน BOQ ซึ่งไม่รวม VAT">
-          <Input name="contract_value" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={project?.contract_value ?? ''} />
-        </FormField>
+        {/* ตอนสร้างโครงการไม่ต้องกรอก ระบบอ่านมูลค่าสัญญาจากไฟล์ BOQ ตอนนำเข้า แก้ภายหลังได้ที่หน้านี้ */}
+        {project ? (
+          <FormField label="มูลค่าสัญญา (ไม่รวม VAT)" hint="ใช้คำนวณกำไรเทียบกับต้นทุนใน BOQ ซึ่งไม่รวม VAT">
+            <Input name="contract_value" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={project.contract_value ?? ''} />
+          </FormField>
+        ) : (
+          <div className="text-sm">
+            <div className="font-medium">มูลค่าสัญญา</div>
+            <p className="text-xs text-muted-foreground mt-1">ไม่ต้องกรอก ระบบอ่านจากไฟล์ BOQ ตอนนำเข้า และให้ตรวจก่อนบันทึก แก้ภายหลังได้ที่หน้าแก้ไขโครงการ</p>
+          </div>
+        )}
         <FormField label="เงินประกันผลงาน (%)">
           <Input name="retention_pct" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={project?.retention_pct ?? 0} />
         </FormField>

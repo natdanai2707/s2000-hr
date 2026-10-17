@@ -12,7 +12,7 @@ export default async function BoqImportPage({ params, searchParams }: { params: 
   const { type } = await searchParams
   await requireUser()
   const supabase = await createClient()
-  const { data: project } = await supabase.from('projects').select('id, name, code').eq('id', id).maybeSingle()
+  const { data: project } = await supabase.from('projects').select('id, name, code, contract_value').eq('id', id).maybeSingle()
   if (!project) notFound()
   const { count } = await supabase.from('boq_versions').select('id', { count: 'exact', head: true }).eq('project_id', id).eq('status', 'confirmed')
   const hasConfirmed = (count ?? 0) > 0
@@ -20,7 +20,7 @@ export default async function BoqImportPage({ params, searchParams }: { params: 
   return (
     <div>
       <PageHeader title="นำเข้า BOQ" subtitle={`${project.code} ${project.name}`} backHref={`/projects/${id}`} />
-      <BoqImportWizard projectId={id} hasConfirmed={hasConfirmed} initialType={type === 'variation_order' && hasConfirmed ? 'variation_order' : 'quotation'} />
+      <BoqImportWizard projectId={id} hasConfirmed={hasConfirmed} initialType={type === 'variation_order' && hasConfirmed ? 'variation_order' : 'quotation'} currentContract={Number(project.contract_value ?? 0)} />
     </div>
   )
 }
