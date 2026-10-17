@@ -361,6 +361,8 @@ export async function saveBoqItem(versionId: string, projectId: string, itemId: 
     : await supabase.from('boq_items').insert({ ...row, boq_version_id: versionId, sort_order: 100000, created_by: user.id })
   if (error) return fail(error)
   revalidatePath(`/projects/${projectId}/boq/${versionId}`)
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/')
   return { ok: true, data: undefined }
 }
 
@@ -368,7 +370,11 @@ export async function deleteBoqItem(versionId: string, projectId: string, itemId
   await requireUser()
   const supabase = await createClient()
   const { error } = await supabase.from('boq_items').delete().eq('id', itemId)
+  // foreign key ของเอกสารต้นทุนปฏิเสธการลบ
+  if (error?.code === '23503') return fail('รายการนี้มีใบขอซื้อหรือเอกสารต้นทุนผูกอยู่ ลบไม่ได้ ให้แก้ปริมาณเป็น 0 แทน')
   if (error) return fail(error)
   revalidatePath(`/projects/${projectId}/boq/${versionId}`)
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/')
   return { ok: true, data: undefined }
 }
