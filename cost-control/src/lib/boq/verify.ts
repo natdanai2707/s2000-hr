@@ -71,6 +71,9 @@ function rowLabel(row: unknown[]): { text: string; col: number } | null {
 export function classifyLabel(label: string): SummaryKind | null {
   const t = label.trim()
   if (/^sub\s*-?\s*total|^รวมย่อย/i.test(t)) return 'sub_total'
+  if (/grand\s*total|รวมเงินทั้งสิ้น/i.test(t)) return 'grand_total'
+  // "ราคารวมค่าดำเนินการ" คือยอดหลังบวกค่าดำเนินการ ไม่ใช่ตัวค่าดำเนินการ ชื่อที่ขึ้นต้นด้วยรวมและไม่มี % เป็นยอดรวม
+  if (/^(ราคา|ยอด)?รวม|^total/i.test(t) && percentOf(t) === null && !/ส่วนลด|discount|vat|ภาษี/i.test(t)) return 'total'
   if (/overhead|ค่าดำเนินการ|กำไร/i.test(t)) return 'overhead'
   if (/ส่วนลด|discount/i.test(t)) return 'discount'
   if (/^(vat\b|ภาษีมูลค่าเพิ่ม)/i.test(t)) return 'vat'
@@ -128,6 +131,7 @@ export function verifySheet(grid: unknown[][], layout: SheetLayout, mapping: Col
   const chain: ChainRow[] = []
   // ผลรวมต้นทุนตั้งแต่แถวยอดต้นทุนล่าสุด ใช้ตรวจแถวยอดรวมที่มีตัวเลขในคอลัมน์ต้นทุนรวม
   const costSums = { material: 0, labor: 0 }
+  let costItems = 0
 
   for (let r = firstRow; r <= grid.length; r++) {
     const row = grid[r - 1] ?? []
@@ -154,7 +158,8 @@ export function verifySheet(grid: unknown[][], layout: SheetLayout, mapping: Col
       ]
       let hadCost = false
       for (const [v, sum, what] of costChecks) {
-        if (v === null) continue
+        // ยังไม่มีรายการตั้งแต่ยอดต้นทุนล่าสุด แปลว่าเป็นตัวเลขที่ผู้ประมาณราคาทดไว้ข้างตาราง ไม่ใช่ยอดหมวด
+        if (v === null || costItems === 0) continue
         hadCost = true
         checked++
         if (off(v, sum)) report(r, label.text, `${what}ของหมวด ${formatBaht(v)} แต่ผลรวมรายการ = ${formatBaht(sum)}`, v, sum)
@@ -162,6 +167,7 @@ export function verifySheet(grid: unknown[][], layout: SheetLayout, mapping: Col
       if (hadCost) {
         costSums.material = 0
         costSums.labor = 0
+        costItems = 0
       }
     }
     if (kind && label) {
@@ -259,6 +265,7 @@ export function verifySheet(grid: unknown[][], layout: SheetLayout, mapping: Col
     }
     costSums.material += matCostT ?? (matCost !== null ? qty * matCost : 0)
     costSums.labor += labCostT ?? (labCost !== null ? qty * labCost : 0)
+    costItems++
 
     const rowTotal = tot ?? (unit !== null ? qty * unit : 0)
     sectionSum += rowTotal

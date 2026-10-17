@@ -240,6 +240,12 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentC
                   ข้อสังเกตจากการอ่านไฟล์: {sheet.ai_warnings.join(' · ')}
                 </Alert>
               )}
+              {sheet.cost_mode && include[sheet.name] && sheet.item_count > 0 && sheet.missing_cost_items >= sheet.item_count && (
+                <Alert tone="danger">
+                  คอลัมน์ต้นทุนที่จับไว้ไม่มีตัวเลขเลยสักรายการ น่าจะจับผิดคอลัมน์ ถ้านำเข้าตอนนี้ต้นทุนจะเท่าราคาขายทุกรายการ
+                  กรุณาเลือกคอลัมน์ต้นทุนวัสดุต่อหน่วยและต้นทุนค่าแรงต่อหน่วยให้ถูกด้านบน
+                </Alert>
+              )}
               {sheet.cost_mode && include[sheet.name] && (
                 <Alert tone="info">
                   ไฟล์นี้มีคอลัมน์ต้นทุนที่ผู้ประมาณราคาทดไว้ ระบบใช้เป็นงบต้นทุน และใช้ราคาวัสดุและค่าแรงในตาราง BOQ เป็นราคาขาย

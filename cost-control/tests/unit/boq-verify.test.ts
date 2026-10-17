@@ -107,6 +107,23 @@ describe('ตรวจตัวเลขใน BOQ', () => {
     expect(bad.issues.map(i => i.row)).toEqual([6])
   })
 
+  it('ใบเสนอราคาที่บวกค่าดำเนินการแล้วมีบรรทัดราคารวมค่าดำเนินการ ก่อนหักส่วนลด', () => {
+    const q: unknown[][] = [
+      ['', 'ลำดับ', 'รายละเอียด', 'จำนวน', 'หน่วย', 'ราคา/หน่วย', 'จำนวนเงิน'],
+      ['', '1', 'งานหลังคา', 1, 'L/S', 500000, 500000],
+      ['', '', '', 'รวม', '', '', 500000],
+      ['', '', '', 'ค่าดำเนินการ+กำไร 12%', '', '', 60000],
+      ['', '', '', 'ราคารวมค่าดำเนินการ', '', '', 560000],
+      ['', '', '', 'ส่วนลด', '', '', 2000],
+      ['', '', '', 'รวมทั้งสิ้น', '', '', 558000],
+      ['', '', '', 'VAT 7%', '', '', 39060],
+    ]
+    const layout = detectLayout(q)
+    const r = verifySheet(q, layout, autoDetectMapping(buildPreview('ใบเสนอราคา', q, layout).headers))
+    expect(r.issues).toEqual([])
+    expect(r.contract).toMatchObject({ amount: 558000, before_vat: true })
+  })
+
   it('เลือกมูลค่าสัญญาจากใบเสนอราคาก่อนชีตรายละเอียด', () => {
     const s = suggestContract([
       { name: 'BOQ', is_detail: true, included: true, contract: { amount: 52920, row: 9, label: 'Total', before_vat: false, source: 'rules' } },

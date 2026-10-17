@@ -31,11 +31,18 @@ describe('เลือกโครงชีตเมื่อมี template ช
     expect(r.split.items.reduce((s, i) => s + i.qty * i.unit_cost, 0)).toBe(49000)
   })
 
-  it('ผล Claude ถูกใช้แทน template ที่ไม่ตรง', () => {
+  it('Claude อ่านไฟล์ใหม่ทุกครั้ง ผลของ Claude มาก่อน template ที่จำจากไฟล์ก่อน', () => {
     const layout = detectLayout(s2000Grid)
     const mapping = autoDetectMapping(buildPreview('BOQ', s2000Grid, layout).headers)
     const r = chooseLayout('BOQ', s2000Grid, staleTemplate, { layout, mapping, is_boq_detail_sheet: true })
     expect(r.source).toBe('ai')
+    const tpl: StoredTemplate = { columns: mapping, layout, headers: templateHeaders(buildPreview('BOQ', s2000Grid, layout).headers, mapping) }
+    expect(chooseLayout('BOQ', s2000Grid, tpl, { layout, mapping, is_boq_detail_sheet: true }).source).toBe('ai')
+  })
+
+  it('template ที่ไม่ตรงกับไฟล์ ถูกข้ามเมื่อ Claude ไม่ทำงาน', () => {
+    const r = chooseLayout('BOQ', s2000Grid, staleTemplate, null)
+    expect(r.source).toBe('rules')
     expect(r.template_rejected).toBe(true)
   })
 
