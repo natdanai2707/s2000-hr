@@ -9,6 +9,8 @@ export interface PrLineInput {
   qtyOrdered: number
   isOffBoq: boolean
   varianceReason?: string | null
+  // ซื้อเป็นหน่วยอื่นโดยยังไม่ระบุตัวแปลงหน่วย qty และ unitPrice เป็นหน่วยที่ซื้อ เทียบกับ BOQ ไม่ได้ นับเฉพาะยอดเงิน
+  unitsUnknown?: boolean
 }
 
 export interface LineEvaluation {
@@ -25,15 +27,16 @@ export interface LineEvaluation {
 
 export function evaluateLine(line: PrLineInput, settings: Settings): LineEvaluation {
   const qtyRemaining = line.boqQty - line.qtyOrdered
-  const qtyOverBy = line.isOffBoq ? 0 : Math.max(line.qtyOrdered + line.qty - line.boqQty, 0)
+  const comparable = !line.isOffBoq && !line.unitsUnknown
+  const qtyOverBy = !comparable ? 0 : Math.max(line.qtyOrdered + line.qty - line.boqQty, 0)
   const qtyOverBoq = qtyOverBy > 0
   const priceDiff = line.unitPrice - line.boqUnitCost
   const priceDiffPct = line.boqUnitCost > 0 ? (priceDiff / line.boqUnitCost) * 100 : null
   const priceOverThreshold =
-    !line.isOffBoq &&
+    comparable &&
     line.boqQty > 0 &&
     line.unitPrice > line.boqUnitCost * (1 + settings.price_variance_threshold_pct / 100)
-  const priceBelow = !line.isOffBoq && line.boqUnitCost > 0 && line.unitPrice < line.boqUnitCost
+  const priceBelow = comparable && line.boqUnitCost > 0 && line.unitPrice < line.boqUnitCost
   return {
     qtyRemaining,
     qtyOverBy,

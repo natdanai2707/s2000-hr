@@ -18,7 +18,8 @@ export interface PrLinePayload {
   unit: string | null
   unit_price: number
   // หน่วย BOQ ต่อหนึ่งหน่วยที่ซื้อ ไม่ส่งมา (เช่นคิวออฟไลน์รุ่นเก่า) ถือว่าหน่วยเดียวกัน
-  qty_factor?: number
+  // null = ซื้อเป็นหน่วยอื่นแต่ยังไม่ระบุว่าเท่ากับกี่หน่วย BOQ
+  qty_factor?: number | null
   supplier_name: string | null
   supplier_id: string | null
   variance_reason: string | null
@@ -45,7 +46,7 @@ export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<A
     if (!l.boq_item_id) return fail('กรุณาเลือกรายการ BOQ')
     if (!(l.qty > 0)) return fail('ปริมาณต้องมากกว่า 0')
     if (!(l.unit_price >= 0)) return fail('ราคาต่อหน่วยไม่ถูกต้อง')
-    if (l.qty_factor !== undefined && !(l.qty_factor > 0)) return fail('ตัวแปลงหน่วยที่ซื้อต้องมากกว่า 0')
+    if (l.qty_factor !== undefined && l.qty_factor !== null && !(l.qty_factor > 0)) return fail('ตัวแปลงหน่วยที่ซื้อต้องมากกว่า 0')
   }
 
   // กันส่งซ้ำจาก offline queue
@@ -87,7 +88,7 @@ export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<A
       qty: l.qty,
       unit: l.unit,
       unit_price: l.unit_price,
-      qty_factor: l.qty_factor ?? 1,
+      qty_factor: l.qty_factor === undefined ? 1 : l.qty_factor,
       supplier_name: l.supplier_name,
       supplier_id: l.supplier_id,
       variance_reason: l.variance_reason,
