@@ -226,6 +226,24 @@ export async function voidDirectPurchase(prId: string, reason: string): Promise<
   return { ok: true, data: undefined }
 }
 
+// เติมหรือแก้ตัวแปลงหน่วยของบรรทัดที่บันทึกไปแล้ว null = ยังไม่ทราบ ยอดเงินไม่เปลี่ยน ปริมาณเทียบ BOQ เปลี่ยนตาม
+export async function setPurchaseQtyFactor(prItemId: string, factor: number | null): Promise<ActionResult> {
+  await requireUser()
+  if (factor !== null && !(factor > 0)) return fail('ตัวแปลงหน่วยต้องมากกว่า 0 หรือเว้นว่างไว้')
+  const supabase = await createClient()
+  const { data: item } = await supabase.from('purchase_request_items').select('pr_id, purchase_requests(project_id)').eq('id', prItemId).maybeSingle()
+  const { error } = await supabase.rpc('set_purchase_qty_factor', { p_pr_item_id: prItemId, p_factor: factor })
+  if (error) return fail(error)
+  revalidatePath('/pr')
+  revalidatePath('/')
+  if (item) {
+    revalidatePath(`/pr/${item.pr_id}`)
+    const projectId = (item.purchase_requests as unknown as { project_id: string } | null)?.project_id
+    if (projectId) revalidatePath(`/projects/${projectId}`)
+  }
+  return { ok: true, data: undefined }
+}
+
 export interface PurchaseDocumentResult {
   attachment_path: string
   // null เมื่ออ่านด้วย Claude ไม่ได้ ไฟล์ยังแนบไว้ได้ ผู้ใช้กรอกรายการเอง

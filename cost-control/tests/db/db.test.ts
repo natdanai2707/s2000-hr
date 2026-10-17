@@ -537,6 +537,24 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     expect(n(row.actual)).toBe(25000)
     expect(n(row.qty_ordered)).toBe(0)
     expect(n(row.qty_received)).toBe(0)
+
+    // เติมตัวแปลงภายหลัง: 1 ชุด = 0.5 m2 ได้ 25 m2 เกิน BOQ 10 m2 และ 1,000 บาทต่อ m2 แพงกว่าต้นทุน
+    const prItem = (await client.query(`select id from public.purchase_request_items where boq_item_id = $1`, [m2])).rows[0].id
+    await expect(runAs(client, engA, q => q(`select public.set_purchase_qty_factor($1, 0.5)`, [prItem]))).rejects.toThrow(/ไม่มีสิทธิ์/)
+    await expect(runAs(client, mgmt, q => q(`select public.set_purchase_qty_factor($1, 0)`, [prItem]))).rejects.toThrow(/มากกว่า 0/)
+    await runAs(client, mgmt, q => q(`select public.set_purchase_qty_factor($1, 0.5)`, [prItem]))
+    const after = (await client.query(`select qty_factor, qty_over_boq, price_over_threshold from public.purchase_request_items where id = $1`, [prItem])).rows[0]
+    expect(after).toMatchObject({ qty_over_boq: true, price_over_threshold: true })
+    expect(n(after.qty_factor)).toBe(0.5)
+    const filled = (await client.query(`select actual, qty_ordered, qty_received from public.v_boq_item_costs where boq_item_id = $1`, [m2])).rows[0]
+    expect(n(filled.actual)).toBe(25000)
+    expect(n(filled.qty_ordered)).toBe(25)
+    expect(n(filled.qty_received)).toBe(25)
+
+    // ล้างกลับเป็นไม่ทราบได้ ธงหายและปริมาณไม่ถูกนับเหมือนเดิม
+    await runAs(client, mgmt, q => q(`select public.set_purchase_qty_factor($1, null)`, [prItem]))
+    expect((await client.query(`select qty_over_boq from public.purchase_request_items where id = $1`, [prItem])).rows[0].qty_over_boq).toBe(false)
+    expect(n((await client.query(`select qty_ordered from public.v_boq_item_costs where boq_item_id = $1`, [m2])).rows[0].qty_ordered)).toBe(0)
   })
 
   it('แนบไฟล์เอกสารจัดซื้อไว้กับรายการสั่งซื้อได้', async () => {

@@ -12,6 +12,8 @@ const FILTERS: { key: string; label: string; statuses: PrStatus[] }[] = [
   { key: 'pending', label: 'รออนุมัติ', statuses: ['pending_pm', 'pending_management'] },
   { key: 'approved', label: 'อนุมัติแล้ว', statuses: ['approved'] },
   { key: 'rejected', label: 'ไม่อนุมัติ', statuses: ['rejected', 'cancelled'] },
+  // ซื้อเป็นหน่วยอื่นจาก BOQ แต่ยังไม่ระบุว่าเท่ากับกี่หน่วย BOQ เปิดแต่ละใบเพื่อเติมได้
+  { key: 'nofactor', label: 'ยังไม่ระบุตัวแปลงหน่วย', statuses: ['draft', 'pending_pm', 'pending_management', 'approved', 'rejected'] },
 ]
 
 export default async function PrListPage({ searchParams }: { searchParams: Promise<{ filter?: string; mine?: string }> }) {
@@ -19,12 +21,15 @@ export default async function PrListPage({ searchParams }: { searchParams: Promi
   const { filter = 'all', mine } = await searchParams
   const supabase = await createClient()
   const f = FILTERS.find(x => x.key === filter) ?? FILTERS[0]
+  const { data: unknownLines } = await supabase.from('purchase_request_items').select('pr_id').is('qty_factor', null).limit(2000)
+  const noFactor = new Set((unknownLines ?? []).map(l => l.pr_id as string))
   let q = supabase
     .from('purchase_requests')
     .select('id, pr_no, status, total_amount, needed_by_date, submitted_at, created_at, requested_by, projects(code, name), profiles!purchase_requests_requested_by_fkey(full_name)')
     .order('created_at', { ascending: false })
     .limit(200)
   if (f.statuses.length) q = q.in('status', f.statuses)
+  if (f.key === 'nofactor') q = q.in('id', noFactor.size ? [...noFactor] : ['00000000-0000-0000-0000-000000000000'])
   if (mine === '1') q = q.eq('requested_by', user.id)
   const { data: prs } = await q
   const direct = usesDirectPurchase(await loadSettings(), user.profile.role)
@@ -57,6 +62,7 @@ export default async function PrListPage({ searchParams }: { searchParams: Promi
                   <div className="text-xs text-muted-foreground truncate">
                     {by?.full_name ?? ''} · สร้าง {formatThaiDate(pr.created_at)} · ต้องการ {pr.needed_by_date ? formatThaiDate(pr.needed_by_date) : '-'}
                   </div>
+                  {noFactor.has(pr.id) && pr.status !== 'cancelled' && <div className="text-xs text-warning-fg">ยังไม่ระบุตัวแปลงหน่วย</div>}
                 </div>
                 <div className="text-right shrink-0">
                   <Money value={pr.total_amount} className="block font-medium" />
