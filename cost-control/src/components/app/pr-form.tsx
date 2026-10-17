@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import { VatPriceInput } from './vat-price-input'
+import { SupplierCombobox } from './supplier-combobox'
 import { addVat } from '@/lib/vat'
 import { cn } from '@/lib/utils'
 
@@ -94,15 +95,15 @@ export function PrForm({ projects, suppliers, settings, initialProjectId }: { pr
       if (!(qty > 0)) return 'ปริมาณต้องมากกว่า 0'
       if (!(price >= 0) || e.line.unit_price === '') return 'กรุณากรอกราคาต่อหน่วย'
       if (e.ev!.requiresReason && !e.line.variance_reason.trim()) return 'กรุณาระบุเหตุผลสำหรับรายการที่เกิน BOQ เกินราคาที่ทดไว้ หรือนอก BOQ'
-      const sup = suppliers.find(s => s.id === e.line.supplier_id)
       payloadLines.push({
         boq_item_id: e.item.id,
         description: e.item.description,
         qty,
         unit: e.item.unit,
         unit_price: price,
-        supplier_id: sup?.id ?? null,
-        supplier_name: sup?.name ?? (e.line.supplier_name.trim() || null),
+        // ชื่อใหม่ที่ยังไม่มีในระบบ ฐานข้อมูลจะบันทึกเข้ารายชื่อซัพพลายเออร์ให้ตอนบันทึก
+        supplier_id: e.line.supplier_id || null,
+        supplier_name: e.line.supplier_name.trim() || null,
         variance_reason: e.line.variance_reason.trim() || null,
       })
     }
@@ -239,14 +240,12 @@ export function PrForm({ projects, suppliers, settings, initialProjectId }: { pr
               </FormField>
             )}
 
-            <FormField label="ซัพพลายเออร์">
-              <div className="grid grid-cols-1 gap-2">
-                <Select value={line.supplier_id} onChange={e => update(line.key, { supplier_id: e.target.value })}>
-                  <option value="">ไม่ระบุ / พิมพ์ชื่อด้านล่าง</option>
-                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </Select>
-                {!line.supplier_id && <Input value={line.supplier_name} onChange={e => update(line.key, { supplier_name: e.target.value })} placeholder="ชื่อซัพพลายเออร์ (ถ้ายังไม่มีในระบบ)" />}
-              </div>
+            <FormField label="ซัพพลายเออร์" hint="ไม่บังคับ">
+              <SupplierCombobox
+                suppliers={suppliers}
+                value={{ id: line.supplier_id, name: line.supplier_name }}
+                onChange={v => update(line.key, { supplier_id: v.id, supplier_name: v.name })}
+              />
             </FormField>
           </div>
         )

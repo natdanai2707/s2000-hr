@@ -364,6 +364,37 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     )).rejects.toThrow(/งานลด/)
   })
 
+  it('ซัพพลายเออร์: ชื่อที่วิศวกรพิมพ์ในใบขอซื้อถูกบันทึกเข้ารายชื่ออัตโนมัติ ไม่สร้างซ้ำ', async () => {
+    const currentSteel = (await client.query(
+      `select x.boq_item_id from public.v_boq_item_costs x join public.v_project_summary s on s.confirmed_version_id = x.boq_version_id
+        where s.project_id = $1 and x.description = 'เหล็ก H-Beam'`, [projectA])).rows[0].boq_item_id
+    // วิศวกรเขียนตาราง suppliers ตรงไม่ได้
+    await expect(runAs(client, engA, q => q(`insert into public.suppliers (name) values ('แอบเพิ่ม')`))).rejects.toThrow(/row-level security/)
+
+    const linked = await runAs(client, engA, async q => {
+      const id = (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $2) returning id`, [projectA, engA])).rows[0].id
+      await q(`insert into public.purchase_request_items (pr_id, boq_item_id, description, qty, unit, unit_price, supplier_name)
+               values ($1, $2, 'เหล็ก', 1, 'ตัน', 30000, 'บจก.เหล็กใต้'), ($1, $2, 'เหล็ก', 1, 'ตัน', 30000, '  บจก.เหล็กใต้ ')`, [id, currentSteel])
+      return (await q(`select supplier_id, supplier_name from public.purchase_request_items where pr_id = $1`, [id])).rows
+    })
+    expect(linked[0].supplier_id).toBeTruthy()
+    expect(linked[1].supplier_id).toBe(linked[0].supplier_id)
+    const rows = (await client.query(`select name from public.suppliers where public.normalize_supplier_name(name) = 'บจก.เหล็กใต้'`)).rows
+    expect(rows).toEqual([{ name: 'บจก.เหล็กใต้' }])
+
+    // เลือกจากรายชื่อด้วย id อย่างเดียว ระบบเติมชื่อให้
+    const named = await runAs(client, engA, async q => {
+      const id = (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $2) returning id`, [projectA, engA])).rows[0].id
+      await q(`insert into public.purchase_request_items (pr_id, boq_item_id, description, qty, unit, unit_price, supplier_id) values ($1, $2, 'เหล็ก', 1, 'ตัน', 30000, $3)`, [id, currentSteel, linked[0].supplier_id])
+      return (await q(`select supplier_name from public.purchase_request_items where pr_id = $1`, [id])).rows[0].supplier_name
+    })
+    expect(named).toBe('บจก.เหล็กใต้')
+
+    // ผู้ใช้ที่ไม่ได้ล็อกอินเรียกสร้างซัพพลายเออร์ไม่ได้
+    await expect(client.query(`set role anon; select public.ensure_supplier('x')`)).rejects.toThrow(/permission denied/)
+    await client.query('reset role')
+  })
+
   it('ยกเลิกการยืนยัน BOQ ได้เมื่อโครงการยังไม่มีเอกสารต้นทุน แล้วกลับมาแก้ตัวเลขได้', async () => {
     const vB = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectB])).rows[0].id
     const itemB = (await client.query(`select id from public.boq_items where boq_version_id = $1 and not is_off_boq`, [vB])).rows[0].id

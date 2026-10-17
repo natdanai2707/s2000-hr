@@ -26,6 +26,13 @@ export async function createInvoice(fd: FormData): Promise<ActionResult<{ id: st
 
   let projectId = str(fd, 'project_id')
   let supplierId = str(fd, 'supplier_id') || null
+  const supplierName = str(fd, 'supplier_name')
+  if (!supplierId && supplierName) {
+    // พิมพ์ชื่อซัพพลายเออร์ใหม่ บันทึกเข้ารายชื่อให้อัตโนมัติ
+    const { data: sid, error: supErr } = await supabase.rpc('ensure_supplier', { p_name: supplierName })
+    if (supErr) return fail(supErr)
+    supplierId = (sid as string | null) ?? null
+  }
   if (poId) {
     const { data: po } = await supabase.from('purchase_orders').select('project_id, supplier_id').eq('id', poId).single()
     if (!po) return fail('ไม่พบใบสั่งซื้อ')

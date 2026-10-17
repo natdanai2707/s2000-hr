@@ -4,10 +4,10 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPoFromPr } from '@/actions/purchase-orders'
 import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/select'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import { VatPriceInput } from './vat-price-input'
+import { SupplierCombobox, type SupplierValue } from './supplier-combobox'
 import { addVat } from '@/lib/vat'
 import { formatBaht, formatQty } from '@/lib/format'
 
@@ -20,9 +20,9 @@ interface Item {
   supplier_name: string | null
 }
 
-export function PoCreateForm({ prId, items, suppliers, defaultSupplierId, thresholdPct }: { prId: string; items: Item[]; suppliers: { id: string; name: string }[]; defaultSupplierId: string; thresholdPct: number }) {
+export function PoCreateForm({ prId, items, suppliers, defaultSupplier, thresholdPct }: { prId: string; items: Item[]; suppliers: { id: string; name: string }[]; defaultSupplier: SupplierValue; thresholdPct: number }) {
   const router = useRouter()
-  const [supplierId, setSupplierId] = useState(defaultSupplierId)
+  const [supplier, setSupplier] = useState<SupplierValue>(defaultSupplier)
   const [prices, setPrices] = useState<Record<string, string>>(Object.fromEntries(items.map(i => [i.id, String(i.unit_price)])))
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -36,7 +36,7 @@ export function PoCreateForm({ prId, items, suppliers, defaultSupplierId, thresh
     setError(null)
     const res = await createPoFromPr(
       prId,
-      supplierId || null,
+      { id: supplier.id || null, name: supplier.name.trim() || null },
       items.filter(i => Number(prices[i.id]) !== i.unit_price).map(i => ({ pr_item_id: i.id, unit_price: Number(prices[i.id]) }))
     )
     setPending(false)
@@ -59,10 +59,7 @@ export function PoCreateForm({ prId, items, suppliers, defaultSupplierId, thresh
       {info && <Alert tone="warning">{info}</Alert>}
       <div className="rounded-xl border border-border bg-card p-4">
         <FormField label="ซัพพลายเออร์" hint={items[0]?.supplier_name ? `ผู้ขอระบุ: ${items.map(i => i.supplier_name).filter(Boolean).join(', ')}` : undefined}>
-          <Select value={supplierId} onChange={e => setSupplierId(e.target.value)}>
-            <option value="">ไม่ระบุ</option>
-            {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </Select>
+          <SupplierCombobox suppliers={suppliers} value={supplier} onChange={setSupplier} />
         </FormField>
       </div>
       <div className="rounded-xl border border-border bg-card divide-y divide-border">

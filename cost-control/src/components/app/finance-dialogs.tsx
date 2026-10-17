@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select'
 import { Alert } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { FormField } from './common'
+import { SupplierCombobox, type SupplierValue } from './supplier-combobox'
 import { formatBaht } from '@/lib/format'
 import { todayISO } from '@/lib/date'
 
@@ -24,9 +25,16 @@ export function InvoiceDialog({ pos, suppliers }: { pos: PoOption[]; suppliers: 
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [poId, setPoId] = useState('')
+  const [supplier, setSupplier] = useState<SupplierValue>({ id: '', name: '' })
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const po = pos.find(p => p.id === poId)
+
+  function choosePo(id: string) {
+    setPoId(id)
+    const sid = pos.find(p => p.id === id)?.supplier_id ?? ''
+    setSupplier({ id: sid, name: suppliers.find(s => s.id === sid)?.name ?? '' })
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -51,16 +59,15 @@ export function InvoiceDialog({ pos, suppliers }: { pos: PoOption[]; suppliers: 
           <form onSubmit={onSubmit} className="space-y-3">
             {error && <Alert tone="danger">{error}</Alert>}
             <FormField label="ใบสั่งซื้อ">
-              <Select name="po_id" value={poId} onChange={e => setPoId(e.target.value)} required>
+              <Select name="po_id" value={poId} onChange={e => choosePo(e.target.value)} required>
                 <option value="" disabled>เลือกใบสั่งซื้อ</option>
                 {pos.map(p => <option key={p.id} value={p.id}>{p.po_no} · {p.project_name} · {formatBaht(p.total_amount)}</option>)}
               </Select>
             </FormField>
-            <FormField label="ซัพพลายเออร์">
-              <Select name="supplier_id" key={po?.supplier_id ?? 'none'} defaultValue={po?.supplier_id ?? ''}>
-                <option value="">ตาม PO</option>
-                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </Select>
+            <FormField label="ซัพพลายเออร์" hint="เว้นว่างไว้ใช้ตามใบสั่งซื้อ">
+              <SupplierCombobox suppliers={suppliers} value={supplier} onChange={setSupplier} />
+              <input type="hidden" name="supplier_id" value={supplier.id} />
+              <input type="hidden" name="supplier_name" value={supplier.name} />
             </FormField>
             <div className="grid grid-cols-2 gap-3">
               <FormField label="เลขที่ใบแจ้งหนี้"><Input name="invoice_no" required /></FormField>
