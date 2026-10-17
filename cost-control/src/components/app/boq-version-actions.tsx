@@ -13,7 +13,6 @@ type Kind = 'confirm' | 'unconfirm' | 'delete' | 'vo'
 export function BoqVersionActions({
   projectId,
   versionId,
-  status,
   canConfirm,
   canUnconfirm,
   canDelete,
@@ -93,9 +92,9 @@ export function BoqVersionActions({
           <DialogHeader>
             <DialogTitle>ยืนยัน BOQ เวอร์ชันนี้</DialogTitle>
             <DialogDescription>
-              เมื่อยืนยันแล้ว งบจะถูกล็อก แก้ตัวเลขทับไม่ได้ เวอร์ชันที่ยืนยันอยู่ก่อนหน้า (ถ้ามี) จะเปลี่ยนเป็นถูกแทนที่
-              และโครงการจะเข้าสถานะกำลังดำเนินการ
-              {status === 'draft' && ' ตราบใดที่โครงการยังไม่มีใบขอซื้อหรือเอกสารต้นทุนใดๆ คุณยกเลิกการยืนยันเพื่อกลับมาแก้ได้ตลอด'}
+              เมื่อยืนยันแล้ว เวอร์ชันนี้เป็นงบที่ใช้เทียบต้นทุน เวอร์ชันที่ยืนยันอยู่ก่อนหน้า (ถ้ามี) จะเปลี่ยนเป็นถูกแทนที่
+              และโครงการจะเข้าสถานะกำลังดำเนินการ ฝ่ายบริหารยังแก้ปริมาณ ราคา และเพิ่มลบรายการได้ตลอด
+              ทุกการแก้ไขถูกบันทึกในประวัติพร้อมค่าเดิมและค่าใหม่
             </DialogDescription>
           </DialogHeader>
           {error && <Alert tone="danger" className="mb-3">{error}</Alert>}

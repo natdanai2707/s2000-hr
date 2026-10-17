@@ -56,10 +56,16 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     itemOff = off[0].id
   })
 
-  it('BOQ ที่ยืนยันแล้วถูกล็อก แก้ตัวเลขทับไม่ได้', async () => {
-    await expect(runAs(client, mgmt, q => q(`update public.boq_items set qty = 200 where id = $1`, [itemSteel]))).rejects.toThrow(/ยืนยันแล้ว/)
-    await expect(runAs(client, mgmt, q => q(`delete from public.boq_items where id = $1`, [itemSteel]))).rejects.toThrow(/ยืนยันแล้ว/)
+  it('BOQ ที่ยืนยันแล้ว: ผู้จัดการโครงการแก้ไม่ได้ ฝ่ายบริหารแก้ได้และมีประวัติ', async () => {
+    await expect(runAs(client, pmA, q => q(`update public.boq_items set qty = 200 where id = $1`, [itemSteel]))).rejects.toThrow(/ฝ่ายบริหาร/)
     await expect(runAs(client, mgmt, q => q(`update public.boq_versions set status = 'draft' where id = $1`, [versionA]))).rejects.toThrow(/ย้อนสถานะ/)
+
+    await runAs(client, mgmt, q => q(`update public.boq_items set qty = 120 where id = $1`, [itemSteel]))
+    const log = (await client.query(
+      `select old_value->>'qty' as old_qty, new_value->>'qty' as new_qty from public.audit_logs
+        where table_name = 'boq_items' and record_id = $1 and action = 'UPDATE' order by created_at desc limit 1`, [itemSteel])).rows[0]
+    expect([Number(log.old_qty), Number(log.new_qty)]).toEqual([100, 120])
+    await runAs(client, mgmt, q => q(`update public.boq_items set qty = 100 where id = $1`, [itemSteel]))
   })
 
   it('RLS: engineer ของโครงการ A อ่านข้อมูลโครงการ B ไม่ได้', async () => {
@@ -452,12 +458,32 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     expect(logged).toBeGreaterThan(0)
   })
 
+  it('แก้ BOQ ที่ยืนยันแล้วหลังมีเอกสารต้นทุน: แก้ได้ แต่ลบหรือเปลี่ยนเป็นงานลดไม่ได้ เวอร์ชันเก่าล็อก', async () => {
+    const cur = (await client.query(`select confirmed_version_id from public.v_project_summary where project_id = $1`, [projectA])).rows[0].confirmed_version_id
+    const steel = (await client.query(`select boq_item_id from public.v_boq_item_costs where boq_version_id = $1 and description = 'เหล็ก H-Beam'`, [cur])).rows[0].boq_item_id
+    const off = (await client.query(`select id from public.boq_items where boq_version_id = $1 and is_off_boq`, [cur])).rows[0].id
+
+    await runAs(client, mgmt, async q => {
+      await q(`update public.boq_items set unit_cost = 29500 where id = $1`, [steel])
+      await q(`insert into public.boq_items (boq_version_id, item_no, description, unit, qty, unit_cost, category, sell_unit_price) values ($1, '9.8', 'งานเพิ่มหน้างาน', 'งาน', 1, 1000, 'labor', 1200)`, [cur])
+    })
+    expect(Number((await client.query(`select unit_cost from public.boq_items where id = $1`, [steel])).rows[0].unit_cost)).toBe(29500)
+
+    await expect(runAs(client, mgmt, q => q(`delete from public.boq_items where id = $1`, [steel]))).rejects.toThrow(/foreign key/)
+    await expect(runAs(client, mgmt, q => q(`update public.boq_items set qty = -1 where id = $1`, [steel]))).rejects.toThrow(/งานลด/)
+    await expect(runAs(client, mgmt, q => q(`delete from public.boq_items where id = $1`, [off]))).rejects.toThrow(/นอก BOQ/)
+
+    const old = (await client.query(`select id from public.boq_items where boq_version_id = $1 limit 1`, [versionA])).rows[0].id
+    await expect(runAs(client, mgmt, q => q(`update public.boq_items set qty = 1 where id = $1`, [old]))).rejects.toThrow(/ถูกแทนที่/)
+  })
+
   it('ยกเลิกการยืนยัน BOQ ได้เมื่อโครงการยังไม่มีเอกสารต้นทุน แล้วกลับมาแก้ตัวเลขได้', async () => {
     const vB = (await client.query(`select id from public.boq_versions where project_id = $1 and status = 'confirmed'`, [projectB])).rows[0].id
     const itemB = (await client.query(`select id from public.boq_items where boq_version_id = $1 and not is_off_boq`, [vB])).rows[0].id
 
-    // ตอนยืนยันแล้วแก้ไม่ได้
-    await expect(runAs(client, mgmt, q => q(`update public.boq_items set qty = 2 where id = $1`, [itemB]))).rejects.toThrow(/ยืนยันแล้ว/)
+    // วิศวกรแก้ BOQ ที่ยืนยันแล้วไม่ได้ (RLS ไม่ให้แตะแถว)
+    const engRows = await runAs(client, engB, async q => (await q(`update public.boq_items set qty = 2 where id = $1`, [itemB])).rowCount)
+    expect(engRows).toBe(0)
     // วิศวกรยกเลิกการยืนยันไม่ได้
     await expect(runAs(client, engB, q => q(`select public.unconfirm_boq_version($1)`, [vB]))).rejects.toThrow(/ฝ่ายบริหาร/)
 

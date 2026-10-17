@@ -60,7 +60,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         actions={
           <>
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/edit`}>แก้ไขโครงการ</Link></Button>}
-            {canManage && s.confirmed_version_id && <EditBoqButton projectId={id} />}
+            {canManage && s.confirmed_version_id && (
+              <EditBoqButton projectId={id} confirmedVersionId={user.profile.role === 'management' || user.profile.role === 'admin' ? s.confirmed_version_id : null} />
+            )}
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/boq/import`}>นำเข้า BOQ</Link></Button>}
             <Button asChild variant="outline"><Link href={`/pr/new?project=${id}`}>{direct ? 'บันทึกการสั่งซื้อ' : 'ขอซื้อ'}</Link></Button>
             <Button asChild variant="outline"><Link href={`/expenses/new?project=${id}`}>บันทึกค่าใช้จ่าย</Link></Button>

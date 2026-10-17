@@ -6,11 +6,16 @@ import { startBoqRevision } from '@/actions/boq'
 import { Button } from '@/components/ui/button'
 
 // แก้ BOQ ที่ยืนยันแล้วโดยไม่ต้องอัปโหลดไฟล์ ระบบเปิดร่าง VO ให้แล้วพาไปหน้าแก้รายการ
-export function EditBoqButton({ projectId }: { projectId: string }) {
+// ฝ่ายบริหารแก้เวอร์ชันที่ยืนยันแล้วได้ตรงๆ จึงพาไปหน้าเวอร์ชันนั้นเลย ไม่ต้องเปิดร่าง
+export function EditBoqButton({ projectId, confirmedVersionId }: { projectId: string; confirmedVersionId?: string | null }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
 
   async function go() {
+    if (confirmedVersionId) {
+      router.push(`/projects/${projectId}/boq/${confirmedVersionId}`)
+      return
+    }
     setPending(true)
     const res = await startBoqRevision(projectId)
     setPending(false)

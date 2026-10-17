@@ -25,7 +25,10 @@ export default async function BoqVersionPage({ params }: { params: Promise<{ id:
   ])
 
   const isManagement = user.profile.role === 'management'
-  const canEdit = version.status === 'draft' && (isManagement || user.profile.role === 'admin' || (user.profile.role === 'project_manager' && (members ?? []).some(m => m.user_id === user.id)))
+  // ฝ่ายบริหารและผู้ดูแลระบบแก้ BOQ ที่ยืนยันแล้วได้ตลอด (ผู้ใช้ตัดสินใจ) ทุกการแก้ไขอยู่ใน audit log
+  const canEdit =
+    (version.status === 'draft' && (isManagement || user.profile.role === 'admin' || (user.profile.role === 'project_manager' && (members ?? []).some(m => m.user_id === user.id)))) ||
+    (version.status === 'confirmed' && (isManagement || user.profile.role === 'admin'))
 
   // สรุปแยกหมวด
   const secMap = new Map<string | null, { name: string; cost: number; sell: number; byCat: Record<string, number> }>()
@@ -132,7 +135,10 @@ export default async function BoqVersionPage({ params }: { params: Promise<{ id:
       </section>
       {version.status === 'confirmed' && (
         <p className="mt-3 text-xs text-muted-foreground">
-          BOQ ที่ยืนยันแล้วเป็นงบที่ล็อก การเปลี่ยนแปลงต้องทำเป็น VO เท่านั้น <Link className="underline" href={`/projects/${id}/boq/import?type=variation_order`}>นำเข้า VO</Link>
+          {canEdit
+            ? 'แก้ปริมาณ ราคา หรือเพิ่มลบรายการได้ตรงนี้เลย ทุกการแก้ไขถูกบันทึกในประวัติพร้อมค่าเดิมและค่าใหม่ ถ้าเป็นงานเพิ่มลดที่ตกลงกับลูกค้าใหม่ ใช้ '
+            : 'BOQ ที่ยืนยันแล้ว แก้ได้เฉพาะฝ่ายบริหาร งานเพิ่มลดที่ตกลงกับลูกค้าใหม่ ใช้ '}
+          <Link className="underline" href={`/projects/${id}/boq/import?type=variation_order`}>นำเข้า VO</Link>
         </p>
       )}
     </div>
