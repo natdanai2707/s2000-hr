@@ -186,6 +186,20 @@ export async function cancelPurchaseRequest(prId: string): Promise<ActionResult>
   return { ok: true, data: undefined }
 }
 
+// ใบที่อนุมัติแล้วแต่ยังไม่ออกใบสั่งซื้อ (ค้างจากก่อนเปิดโหมดบันทึกซื้อตรง) บันทึกเป็นต้นทุนในขั้นตอนเดียว
+export async function recordApprovedAsDirect(prId: string): Promise<ActionResult> {
+  await requireUser()
+  const supabase = await createClient()
+  const { data: pr } = await supabase.from('purchase_requests').select('project_id').eq('id', prId).maybeSingle()
+  const { error } = await supabase.rpc('record_direct_purchase', { p_pr_id: prId })
+  if (error) return fail(error)
+  revalidatePath('/pr')
+  revalidatePath(`/pr/${prId}`)
+  revalidatePath('/')
+  if (pr) revalidatePath(`/projects/${pr.project_id}`)
+  return { ok: true, data: undefined }
+}
+
 // ยกเลิกรายการที่บันทึกซื้อตรงผิด ต้นทุนจริงลดลงตาม ต้องระบุเหตุผล
 export async function voidDirectPurchase(prId: string, reason: string): Promise<ActionResult> {
   await requireUser()

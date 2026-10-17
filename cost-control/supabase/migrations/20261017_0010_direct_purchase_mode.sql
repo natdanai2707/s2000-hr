@@ -30,8 +30,12 @@ begin
   select * into v_pr from public.purchase_requests where id = p_pr_id for update;
   if not found then raise exception 'ไม่พบใบขอซื้อ'; end if;
   -- ต้องผ่าน submit_purchase_request ก่อน เพื่อให้ตรวจเกิน BOQ เกินราคา และบังคับเหตุผลตามกติกาเดิม
-  if v_pr.status not in ('pending_pm', 'pending_management') then
+  -- รับใบที่อนุมัติแล้วแต่ยังไม่ออกใบสั่งซื้อด้วย (ใบที่ค้างจากก่อนเปิดโหมดนี้) ไม่งั้นจะไม่มีทางนับเป็นต้นทุน
+  if v_pr.status not in ('pending_pm', 'pending_management', 'approved') then
     raise exception 'ใบขอซื้อนี้ไม่ได้อยู่ในสถานะที่บันทึกซื้อตรงได้';
+  end if;
+  if exists (select 1 from public.purchase_orders where pr_id = p_pr_id and status <> 'cancelled') then
+    raise exception 'ใบขอซื้อนี้ออกใบสั่งซื้อแล้ว';
   end if;
 
   insert into public.approvals (document_type, document_id, step, approver_id, decision, comment, created_by)

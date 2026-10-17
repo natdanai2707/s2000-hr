@@ -412,6 +412,14 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     const engPr = await newPr(engA)
     await expect(runAs(client, engA, q => q(`select public.record_direct_purchase($1)`, [engPr]))).rejects.toThrow(/ฝ่ายบริหาร/)
 
+    // ใบที่อนุมัติแล้วแต่ยังไม่มีใบสั่งซื้อ (ค้างจากก่อนเปิดโหมด) ฝ่ายบริหารบันทึกเป็นต้นทุนได้
+    await runAs(client, mgmt, q => q(`select public.decide_purchase_request($1, 'approved', null)`, [engPr]))
+    const legacyPo = await runAs(client, mgmt, async q => (await q(`select public.record_direct_purchase($1) as id`, [engPr])).rows[0].id as string)
+    expect((await client.query(`select status from public.purchase_orders where id = $1`, [legacyPo])).rows[0].status).toBe('received')
+    await expect(runAs(client, mgmt, q => q(`select public.record_direct_purchase($1)`, [engPr]))).rejects.toThrow(/ออกใบสั่งซื้อแล้ว/)
+    const base = (await client.query(`select actual from public.v_boq_item_costs where boq_item_id = $1`, [steel.boq_item_id])).rows[0]
+    steel.actual = base.actual
+
     const pr = await newPr(mgmt)
     const poId = await runAs(client, mgmt, async q => (await q(`select public.record_direct_purchase($1) as id`, [pr])).rows[0].id as string)
 
@@ -426,7 +434,7 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     expect(n(after.committed)).toBe(n(steel.committed))
 
     // เรียกซ้ำกับใบเดิมไม่ได้ และปิดโหมดแล้วใช้ไม่ได้
-    await expect(runAs(client, mgmt, q => q(`select public.record_direct_purchase($1)`, [pr]))).rejects.toThrow(/สถานะ/)
+    await expect(runAs(client, mgmt, q => q(`select public.record_direct_purchase($1)`, [pr]))).rejects.toThrow(/ออกใบสั่งซื้อแล้ว/)
     await client.query(`update public.settings set value = 'false'::jsonb where key = 'direct_purchase_mode'`)
     const pr2 = await newPr(mgmt)
     await expect(runAs(client, mgmt, q => q(`select public.record_direct_purchase($1)`, [pr2]))).rejects.toThrow(/ไม่ได้เปิดโหมด/)
