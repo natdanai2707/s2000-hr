@@ -233,7 +233,16 @@ export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promis
     if (e instanceof Anthropic.RateLimitError) return { status: 'failed', reason: 'เรียกใช้บ่อยเกินไปหรือเครดิตหมด' }
     if (e instanceof Anthropic.APIConnectionTimeoutError) return { status: 'failed', reason: 'Claude ตอบช้าเกินกำหนด' }
     if (e instanceof Anthropic.APIConnectionError) return { status: 'failed', reason: 'เชื่อมต่อ API ไม่ได้' }
-    if (e instanceof Anthropic.APIError) return { status: 'failed', reason: `API ตอบกลับ ${e.message}`.slice(0, 400) }
+    if (e instanceof Anthropic.APIError) {
+      let hint = ''
+      if (/workspace/i.test(e.message)) {
+        const ws = process.env.ANTHROPIC_WORKSPACE_ID?.trim()
+        hint = ws
+          ? ` · เซิร์ฟเวอร์ส่ง workspace ${ws.slice(0, 14)} ไปแล้ว ตรวจว่า ID ถูกต้องและอยู่องค์กรเดียวกับ key`
+          : ' · เซิร์ฟเวอร์ยังไม่เห็นตัวแปร ANTHROPIC_WORKSPACE_ID ตรวจชื่อตัวแปร ติ๊ก Production แล้ว Redeploy'
+      }
+      return { status: 'failed', reason: `API ตอบกลับ ${e.message}`.slice(0, 400) + hint }
+    }
     // เช่นคำตอบไม่ตรงรูปแบบที่กำหนด ให้ผู้ใช้เห็นข้อความจริงไว้ส่งต่อให้ผู้ดูแลระบบ
     return { status: 'failed', reason: `อ่านคำตอบของ Claude ไม่ได้: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160) }
   }
