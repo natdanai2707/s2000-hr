@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { readPurchaseDocument, type PurchaseDocumentResult } from '@/actions/purchase-requests'
 import { Alert } from '@/components/ui/alert'
 import { formatBaht } from '@/lib/format'
@@ -30,10 +30,7 @@ export function PurchaseDocumentReader({ projectId, onRead }: { projectId: strin
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<PurchaseDocumentResult | null>(null)
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = e.target.files?.[0]
-    e.target.value = ''
-    if (!picked) return
+  async function readFile(picked: File) {
     setPending(true)
     setError(null)
     setResult(null)
@@ -49,12 +46,42 @@ export function PurchaseDocumentReader({ projectId, onRead }: { projectId: strin
     onRead(res.data)
   }
 
+  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = e.target.files?.[0]
+    e.target.value = ''
+    if (picked) void readFile(picked)
+  }
+
+  // กด Ctrl+V ที่ไหนก็ได้ในหน้า วางรูปที่ copy หรือ capture หน้าจอไว้ได้ทันที
+  // ถ้ากำลังพิมพ์ในช่องกรอกและ clipboard มีข้อความ (เช่น copy จาก Excel ซึ่งมีทั้งข้อความและรูป) ให้วางข้อความตามปกติ
+  const readRef = useRef(readFile)
+  const pendingRef = useRef(pending)
+  useEffect(() => {
+    readRef.current = readFile
+    pendingRef.current = pending
+  })
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      if (pendingRef.current || !e.clipboardData) return
+      const file = [...e.clipboardData.files].find(f => f.type.startsWith('image/') || f.type === 'application/pdf')
+      if (!file) return
+      const t = e.target as HTMLElement | null
+      const editing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+      if (editing && e.clipboardData.types.includes('text/plain')) return
+      e.preventDefault()
+      void readRef.current(file)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [])
+
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3">
       <div>
         <div className="font-medium">อ่านจากรูปใบสั่งซื้อ</div>
         <p className="text-xs text-muted-foreground mt-0.5">
           ถ่ายรูปหรือแนบไฟล์ใบสั่งซื้อ ใบกำกับภาษี หรือใบเสร็จ Claude จะกรอกรายการและจับคู่กับ BOQ ให้ ไฟล์แนบเก็บไว้กับรายการนี้ ตรวจทุกบรรทัดก่อนกดบันทึก
+          <span className="hidden sm:inline"> หรือ copy รูปแล้วกด Ctrl+V ที่หน้านี้ได้เลย</span>
         </p>
       </div>
       {/* ปุ่มภาษาไทยแทนช่องเลือกไฟล์ของเบราว์เซอร์ บนมือถือกดแล้วเลือกถ่ายรูปหรือเลือกไฟล์ได้ */}
