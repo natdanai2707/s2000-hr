@@ -6,6 +6,9 @@ import { requireUser, loadSettings } from '@/lib/auth'
 import { usesDirectPurchase } from '@/lib/types'
 import { notify, approverIdsFor } from '@/lib/notifications'
 import { formatBaht } from '@/lib/format'
+import { safeObjectName } from '@/lib/storage'
+import { extractPurchaseDocument } from '@/lib/purchase/extract'
+import { reviewExtraction, type ReviewedLine } from '@/lib/purchase/review'
 import { fail, type ActionResult } from './types'
 
 export interface PrLinePayload {
@@ -26,6 +29,8 @@ export interface QueuedPrPayload {
   project_id: string
   needed_by_date: string | null
   note: string | null
+  // รูปหรือ PDF ของเอกสารจัดซื้อที่แนบไว้ (อัปโหลดตอนให้ Claude อ่าน)
+  attachment_path?: string | null
   lines: PrLinePayload[]
 }
 
@@ -66,6 +71,8 @@ export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<A
       needed_by_date: payload.needed_by_date || null,
       note: payload.note || null,
       client_ref: payload.client_ref || null,
+      // รับเฉพาะไฟล์ใต้โฟลเดอร์ของโครงการนี้
+      attachment_path: payload.attachment_path?.startsWith(`projects/${payload.project_id}/purchases/`) ? payload.attachment_path : null,
       created_by: user.id,
     })
     .select('id, pr_no')
@@ -216,4 +223,75 @@ export async function voidDirectPurchase(prId: string, reason: string): Promise<
   revalidatePath('/')
   if (pr) revalidatePath(`/projects/${pr.project_id}`)
   return { ok: true, data: undefined }
+}
+
+export interface PurchaseDocumentResult {
+  attachment_path: string
+  // null เมื่ออ่านด้วย Claude ไม่ได้ ไฟล์ยังแนบไว้ได้ ผู้ใช้กรอกรายการเอง
+  read_error: string | null
+  supplier_name: string | null
+  document_no: string | null
+  document_date: string | null
+  grand_total: number | null
+  total_excl_vat: number | null
+  lines: ReviewedLine[]
+  issues: string[]
+  notes: string[]
+  warnings: string[]
+}
+
+const DOC_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf'] as const
+type DocType = (typeof DOC_TYPES)[number]
+
+// อัปโหลดรูปหรือ PDF ของเอกสารจัดซื้อ ให้ Claude อ่านรายการ แล้วตรวจตัวเลขด้วยโค้ด ส่งกลับไปให้ฟอร์มกรอกให้
+export async function readPurchaseDocument(projectId: string, fd: FormData): Promise<ActionResult<PurchaseDocumentResult>> {
+  await requireUser()
+  const supabase = await createClient()
+  const file = fd.get('file')
+  if (!(file instanceof File) || file.size === 0) return fail('กรุณาเลือกรูปหรือไฟล์ PDF')
+  if (!(DOC_TYPES as readonly string[]).includes(file.type)) return fail('รองรับรูป JPG PNG WEBP และไฟล์ PDF')
+  if (file.size > 4 * 1024 * 1024) return fail('ไฟล์ใหญ่เกิน 4MB')
+
+  const { data: summary } = await supabase.from('v_project_summary').select('confirmed_version_id').eq('project_id', projectId).maybeSingle()
+  if (!summary?.confirmed_version_id) return fail('โครงการนี้ยังไม่มี BOQ ที่ยืนยัน')
+  const { data: boq } = await supabase
+    .from('boq_items')
+    .select('id, description, unit')
+    .eq('boq_version_id', summary.confirmed_version_id)
+    .gte('qty', 0)
+    .order('sort_order')
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const ext = file.type === 'application/pdf' ? 'pdf' : file.type.split('/')[1]
+  const path = `projects/${projectId}/purchases/${safeObjectName(file.name || `document.${ext}`, ext)}`
+  const { error: upErr } = await supabase.storage.from('project-files').upload(path, buffer, { contentType: file.type })
+  if (upErr) return fail(`อัปโหลดไฟล์ไม่สำเร็จ: ${upErr.message}`)
+
+  const empty: PurchaseDocumentResult = {
+    attachment_path: path, read_error: null, supplier_name: null, document_no: null, document_date: null,
+    grand_total: null, total_excl_vat: null, lines: [], issues: [], notes: [], warnings: [],
+  }
+  const outcome = await extractPurchaseDocument({ data: buffer.toString('base64'), mediaType: file.type as DocType }, boq ?? [])
+  if (outcome.status === 'off') return { ok: true, data: { ...empty, read_error: 'ระบบยังเรียก Claude ไม่ได้ เพราะไม่พบ ANTHROPIC_API_KEY บนเซิร์ฟเวอร์' } }
+  if (outcome.status === 'failed') return { ok: true, data: { ...empty, read_error: `เรียก Claude ไม่สำเร็จ (${outcome.reason})` } }
+  const doc = outcome.doc
+  if (!doc.is_purchase_document || doc.lines.length === 0) {
+    return { ok: true, data: { ...empty, read_error: 'ไม่พบรายการสินค้าในเอกสารนี้ ตรวจว่าเป็นใบสั่งซื้อ ใบกำกับภาษี หรือใบเสร็จ และรูปชัดพอ' } }
+  }
+  const review = reviewExtraction(doc, boq ?? [])
+  return {
+    ok: true,
+    data: {
+      ...empty,
+      supplier_name: doc.supplier_name,
+      document_no: doc.document_no,
+      document_date: doc.document_date,
+      grand_total: doc.grand_total,
+      total_excl_vat: review.total_excl_vat,
+      lines: review.lines,
+      issues: review.issues,
+      notes: review.notes,
+      warnings: doc.warnings.slice(0, 4),
+    },
+  }
 }

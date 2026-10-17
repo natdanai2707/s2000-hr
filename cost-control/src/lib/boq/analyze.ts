@@ -1,5 +1,5 @@
 import 'server-only'
-import Anthropic from '@anthropic-ai/sdk'
+import { analysisEnabled, anthropicClient, CLAUDE_MODEL, describeApiError } from '@/lib/anthropic'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
 import { cellNumber, cellText, type ColumnMapping } from './split'
@@ -154,9 +154,7 @@ export function gridToText(grid: unknown[][], maxRows: number, maxCols: number):
   return lines.join('\n')
 }
 
-export function analysisEnabled(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY)
-}
+export { analysisEnabled }
 
 // วิเคราะห์หนึ่งชีต ผู้เรียกต้องมีทางสำรองแบบกฎตายตัวเสมอ ระบบต้องนำเข้าได้แม้ไม่มี API
 export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promise<AnalyzeOutcome> {
@@ -166,11 +164,9 @@ export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promis
   const table = gridToText(grid, 45, maxCols)
 
   try {
-    // key ระดับองค์กรที่ไม่ได้ผูกกับ workspace ต้องบอก workspace ในทุกคำขอ
-    const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim()
-    const client = new Anthropic(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {})
+    const client = anthropicClient()
     const response = await client.beta.messages.parse({
-      model: 'claude-opus-5-5',
+      model: CLAUDE_MODEL,
       max_tokens: 16000,
       system: SYSTEM,
       // ถ้าตัวกรองความปลอดภัยปฏิเสธ ให้ API ส่งต่อไปโมเดลสำรองที่เหมาะสมเอง
@@ -228,22 +224,6 @@ export async function analyzeSheet(sheetName: string, grid: unknown[][]): Promis
     }
   } catch (e) {
     console.error(`วิเคราะห์ชีต ${sheetName} ไม่สำเร็จ ใช้การตรวจจับแบบกฎแทน:`, e)
-    if (e instanceof Anthropic.AuthenticationError) return { status: 'failed', reason: 'API key ไม่ถูกต้อง' }
-    if (e instanceof Anthropic.PermissionDeniedError) return { status: 'failed', reason: 'API key ไม่มีสิทธิ์ใช้งานโมเดลนี้' }
-    if (e instanceof Anthropic.RateLimitError) return { status: 'failed', reason: 'เรียกใช้บ่อยเกินไปหรือเครดิตหมด' }
-    if (e instanceof Anthropic.APIConnectionTimeoutError) return { status: 'failed', reason: 'Claude ตอบช้าเกินกำหนด' }
-    if (e instanceof Anthropic.APIConnectionError) return { status: 'failed', reason: 'เชื่อมต่อ API ไม่ได้' }
-    if (e instanceof Anthropic.APIError) {
-      let hint = ''
-      if (/workspace/i.test(e.message)) {
-        const ws = process.env.ANTHROPIC_WORKSPACE_ID?.trim()
-        hint = ws
-          ? ` · เซิร์ฟเวอร์ส่ง workspace ${ws.slice(0, 14)} ไปแล้ว ตรวจว่า ID ถูกต้องและอยู่องค์กรเดียวกับ key`
-          : ' · เซิร์ฟเวอร์ยังไม่เห็นตัวแปร ANTHROPIC_WORKSPACE_ID ตรวจชื่อตัวแปร ติ๊ก Production แล้ว Redeploy'
-      }
-      return { status: 'failed', reason: `API ตอบกลับ ${e.message}`.slice(0, 400) + hint }
-    }
-    // เช่นคำตอบไม่ตรงรูปแบบที่กำหนด ให้ผู้ใช้เห็นข้อความจริงไว้ส่งต่อให้ผู้ดูแลระบบ
-    return { status: 'failed', reason: `อ่านคำตอบของ Claude ไม่ได้: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160) }
+    return { status: 'failed', reason: describeApiError(e) }
   }
 }

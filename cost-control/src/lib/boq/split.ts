@@ -342,7 +342,9 @@ export function splitRows(rows: unknown[][], mapping: ColumnMapping, defaultMark
       const unitCost = activeDeduction ? Math.abs(rawUnitCost) : rawUnitCost
       if (activeDeduction) deductionItems++
       const sell = sellPrice !== undefined ? Math.abs(sellPrice) : unitCost * (1 + markup / 100)
-      const itemMarkup = sellPrice !== undefined ? (unitCost > 0 ? Math.round((sell / unitCost - 1) * 10000) / 100 : 0) : markup
+      // markup เก็บไว้ดูอย่างเดียว คอลัมน์รับได้ไม่เกิน ±9,999.99% ต้นทุนต่ำมากเทียบราคาขาย (เช่นต้นทุน 0.10 ขาย 100) จะล้น
+      const rawMarkup = sellPrice !== undefined ? (unitCost > 0 ? Math.round((sell / unitCost - 1) * 10000) / 100 : 0) : markup
+      const itemMarkup = Math.max(-9999.99, Math.min(9999.99, rawMarkup))
       items.push({
         section_index: activeSection,
         item_no: itemNo || null,

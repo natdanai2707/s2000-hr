@@ -56,3 +56,17 @@ describe('คอลัมน์ต้นทุนของผู้ประม�
     expect(issues[0].message).toContain('ต้นทุนวัสดุรวม 29,000.00')
   })
 })
+
+describe('markup ที่คำนวณจากราคาขายเทียบต้นทุน', () => {
+  it('ต้นทุนต่ำมากเทียบราคาขาย markup ไม่เกินช่องเก็บ ±9,999.99%', () => {
+    const g: unknown[][] = [
+      ['ITEMS', 'DESCRIPTION', "Q'TY", 'UNIT', 'MATERIAL', 'MATERIAL', 'LABOUR', 'LABOUR', 'UNIT RATE', 'TOTAL'],
+      ['ITEMS', 'DESCRIPTION', "Q'TY", 'UNIT', '@', 'SUB TOTAL', '@', 'SUB TOTAL', 'UNIT RATE', 'TOTAL', '', 'ต้นทุนวัสดุ /หน่วย'],
+      ['', 'น็อตยึด', 100, 'ตัว', 100, 10000, '', '', 100, 10000, '', 0.1],
+    ]
+    const r = chooseLayout('BOQ', g, null, null)
+    expect(r.split.cost_mode).toBe(true)
+    expect(r.split.items[0].markup_pct).toBe(9999.99)
+    expect(r.split.items[0].unit_cost).toBe(0.1)
+  })
+})
