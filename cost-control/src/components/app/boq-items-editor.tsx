@@ -11,6 +11,7 @@ import { Select } from '@/components/ui/select'
 import { Alert } from '@/components/ui/alert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { FormField } from './common'
+import { VatPriceInput } from './vat-price-input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 export interface EditableItem {
@@ -59,7 +60,11 @@ export function BoqItemsEditor({
       qty: Number(fd.get('qty')),
       unit_cost: Number(fd.get('unit_cost')),
       category: String(fd.get('category') ?? 'material'),
-      markup_pct: Number(fd.get('markup_pct')),
+      sell_unit_price: Number(fd.get('sell_unit_price')),
+    }
+    if (!(input.unit_cost >= 0) || String(fd.get('unit_cost') ?? '') === '') {
+      setError('กรุณากรอกต้นทุนต่อหน่วย')
+      return
     }
     setPending(true)
     setError(null)
@@ -142,10 +147,11 @@ export function BoqItemsEditor({
           <div key={it.id} className="rounded-xl border border-border bg-card p-3">
             <div className="text-sm font-medium">{it.item_no ? `${it.item_no} ` : ''}{it.description}</div>
             <div className="text-xs text-muted-foreground">{secName(it.section_id)} · {BOQ_CATEGORY_LABELS[it.category]}</div>
-            <div className="mt-1 grid grid-cols-3 gap-1 text-xs">
+            <div className="mt-1 grid grid-cols-2 gap-1 text-xs">
               <div><div className="text-muted-foreground">ปริมาณ</div><div className="tabular">{formatQty(it.qty)} {it.unit ?? ''}</div></div>
-              <div><div className="text-muted-foreground">ทุน/หน่วย</div><div className="tabular">{formatBaht(it.unit_cost)}</div></div>
               <div><div className="text-muted-foreground">รวมทุน</div><div className="tabular">{formatBaht(toNumber(it.qty) * toNumber(it.unit_cost))}</div></div>
+              <div><div className="text-muted-foreground">ทุน/หน่วย</div><div className="tabular">{formatBaht(it.unit_cost)}</div></div>
+              <div><div className="text-muted-foreground">ขาย/หน่วย</div><div className="tabular">{formatBaht(it.sell_unit_price)}</div></div>
             </div>
             {canEdit && !it.is_off_boq && (
               <div className="mt-2 flex gap-2 justify-end">
@@ -189,13 +195,8 @@ export function BoqItemsEditor({
               <FormField label="ปริมาณ">
                 <Input name="qty" type="number" step="0.001" inputMode="decimal" required defaultValue={current?.qty ?? ''} />
               </FormField>
-              <FormField label="ต้นทุนต่อหน่วย (ไม่รวม VAT)">
-                <Input name="unit_cost" type="number" step="0.01" inputMode="decimal" required defaultValue={current?.unit_cost ?? ''} />
-              </FormField>
-              <FormField label="markup (%)">
-                <Input name="markup_pct" type="number" step="0.01" inputMode="decimal" defaultValue={current?.markup_pct ?? 0} />
-              </FormField>
             </div>
+            <PriceFields key={current?.id ?? 'new'} cost={current?.unit_cost} sell={current?.sell_unit_price} />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setEditing(null)}>ยกเลิก</Button>
               <Button type="submit" disabled={pending}>{pending ? 'กำลังบันทึก' : 'บันทึก'}</Button>
@@ -203,6 +204,30 @@ export function BoqItemsEditor({
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// ต้นทุนและราคาขายต่อหน่วย กรอกได้ทั้งแบบไม่รวมและรวม VAT ช่องที่กรอกล่าสุดเป็นตัวตั้ง
+// ระบบเก็บแบบไม่รวม VAT และคำนวณ markup จากราคาขายเทียบต้นทุนให้ดู
+function PriceFields({ cost: initialCost, sell: initialSell }: { cost?: number; sell?: number }) {
+  const [cost, setCost] = useState(initialCost !== undefined ? String(initialCost) : '')
+  const [sell, setSell] = useState(initialSell !== undefined ? String(initialSell) : '')
+  const c = Number(cost)
+  const p = Number(sell)
+  const markup = cost !== '' && sell !== '' && c > 0 ? ((p / c - 1) * 100) : null
+  return (
+    <div className="space-y-3">
+      <VatPriceInput label="ต้นทุนต่อหน่วย" value={cost} onChange={setCost} required />
+      <VatPriceInput label="ราคาขายต่อหน่วย" value={sell} onChange={setSell} required />
+      <input type="hidden" name="unit_cost" value={cost} />
+      <input type="hidden" name="sell_unit_price" value={sell} />
+      {markup !== null && (
+        <p className={markup < 0 ? 'text-sm text-danger-fg' : 'text-sm text-muted-foreground'}>
+          กำไรต่อหน่วย {formatBaht(p - c)} บาท ({markup.toFixed(2)}% ของต้นทุน)
+          {markup < 0 && ' ราคาขายต่ำกว่าต้นทุน'}
+        </p>
+      )}
     </div>
   )
 }
