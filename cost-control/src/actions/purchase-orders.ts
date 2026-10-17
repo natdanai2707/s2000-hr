@@ -11,9 +11,20 @@ export interface PoPriceOverride {
 }
 
 // แปลง PR ที่อนุมัติเป็น PO ถ้าแก้ราคาแพงขึ้นเกิน threshold DB จะส่ง PR กลับไปอนุมัติใหม่ (คืน po_id = null)
-export async function createPoFromPr(prId: string, supplierId: string | null, prices: PoPriceOverride[]): Promise<ActionResult<{ po_id: string | null }>> {
+export async function createPoFromPr(
+  prId: string,
+  supplier: { id: string | null; name: string | null },
+  prices: PoPriceOverride[]
+): Promise<ActionResult<{ po_id: string | null }>> {
   await requireUser()
   const supabase = await createClient()
+  // พิมพ์ชื่อซัพพลายเออร์ใหม่ บันทึกเข้ารายชื่อก่อนออก PO
+  let supplierId = supplier.id
+  if (!supplierId && supplier.name) {
+    const { data: sid, error: supErr } = await supabase.rpc('ensure_supplier', { p_name: supplier.name })
+    if (supErr) return fail(supErr)
+    supplierId = (sid as string | null) ?? null
+  }
   const { data, error } = await supabase.rpc('create_po_from_pr', {
     p_pr_id: prId,
     p_supplier_id: supplierId,

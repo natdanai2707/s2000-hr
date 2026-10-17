@@ -18,7 +18,12 @@ export default async function NewPoPage({ searchParams }: { searchParams: Promis
     supabase.from('suppliers').select('id, name').order('name'),
   ])
   const proj = pr.projects as unknown as { code: string; name: string }
-  const defaultSupplier = (items ?? []).find(i => i.supplier_id)?.supplier_id ?? ''
+  // ใช้ซัพพลายเออร์ที่ผู้ขอระบุไว้ในใบขอซื้อเป็นค่าเริ่มต้น
+  const requested = (items ?? []).find(i => i.supplier_id || i.supplier_name)
+  const defaultSupplier = {
+    id: requested?.supplier_id ?? '',
+    name: (suppliers ?? []).find(s => s.id === requested?.supplier_id)?.name ?? requested?.supplier_name ?? '',
+  }
 
   return (
     <div className="max-w-2xl">
@@ -27,7 +32,7 @@ export default async function NewPoPage({ searchParams }: { searchParams: Promis
         prId={prId}
         items={(items ?? []).map(i => ({ id: i.id, description: i.description, qty: Number(i.qty), unit: i.unit, unit_price: Number(i.unit_price), supplier_name: i.supplier_name }))}
         suppliers={suppliers ?? []}
-        defaultSupplierId={defaultSupplier}
+        defaultSupplier={defaultSupplier}
         thresholdPct={settings.price_variance_threshold_pct}
       />
     </div>
