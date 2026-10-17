@@ -1,5 +1,5 @@
-// เลือกโครงของชีตที่จะใช้แตกรายการ จาก 3 แหล่ง: template ที่บันทึกไว้, Claude อ่านให้, กฎตายตัว
-// template ใช้ได้ต่อเมื่อหัวตารางของไฟล์ใหม่ตรงกับไฟล์ที่บันทึกไว้จริงและแตกรายการได้ ไม่งั้นข้ามไปใช้ Claude
+// เลือกโครงของชีตที่จะใช้แตกรายการ จาก 3 แหล่ง: Claude อ่านให้, template ที่บันทึกไว้, กฎตายตัว
+// Claude อ่านไฟล์ใหม่ทุกครั้งและมาก่อน template ใช้เฉพาะเมื่อ Claude ไม่ทำงาน และหัวตารางตรงกับไฟล์ที่บันทึกไว้จริง
 // แหล่งไหนแตกได้ 0 รายการ ลองแหล่งถัดไป เพื่อไม่ให้ชีตที่อ่านได้ถูกทิ้งเพราะแหล่งแรกผิด
 import { buildPreview, detectLayout, type SheetPreview } from './parse'
 import { autoDetectMapping, detectCostColumns, headerScore, normalizeHeader, splitRows, type ColumnMapping, type SplitResult } from './split'
@@ -52,36 +52,53 @@ function run(name: string, grid: unknown[][], layout: SheetLayout, mapping: Colu
   return { preview, split: splitRows(preview.rows, mapping, 0) }
 }
 
-// คอลัมน์ต้นทุนหาจากทั้งชีต เติมให้ทุกแหล่งที่ยังไม่ได้ระบุ ผู้ใช้ปิดได้ในหน้านำเข้าโดยเลือก ไม่มี
-function withCostColumns(mapping: ColumnMapping, cost: ColumnMapping): ColumnMapping {
+const COST_KEYS = ['material_cost', 'labor_cost', 'material_cost_total', 'labor_cost_total'] as const
+
+function withoutCost(mapping: ColumnMapping): ColumnMapping {
   const out = { ...mapping }
-  for (const [k, v] of Object.entries(cost) as [keyof ColumnMapping, number][]) {
-    if (out[k] === undefined || out[k] === null) out[k] = v
-  }
+  for (const k of COST_KEYS) delete out[k]
   return out
 }
 
-export function chooseLayout(name: string, grid: unknown[][], tplIn: StoredTemplate | null, aiIn: AiLayout | null): ChosenLayout {
-  const cost = detectCostColumns(grid)
-  const tpl = tplIn ? { ...tplIn, columns: withCostColumns(tplIn.columns as ColumnMapping, cost) } : null
-  const ai = aiIn ? { ...aiIn, mapping: withCostColumns(aiIn.mapping, cost) } : null
+// คอลัมน์ต้นทุนต้องอ่านใหม่จากไฟล์นี้ทุกครั้ง ห้ามใช้ตำแหน่งที่จำจากไฟล์ก่อน เพราะแต่ละงานวางคอลัมน์ต้นทุนไม่ตรงกัน
+// Claude เลือกคอลัมน์ต้นทุนจากการอ่านไฟล์ แล้วโค้ดตรวจว่าคอลัมน์นั้นมีตัวเลขต้นทุนจริงในบรรทัดรายการ
+// ถ้าคอลัมน์ที่เลือกว่างเกือบทั้งหมด (ทุกรายการจะใช้ราคาขายเป็นต้นทุน) ลองคอลัมน์ที่หัวคอลัมน์ในไฟล์นี้บอกว่าเป็นต้นทุน
+// แล้วใช้ชุดที่มีต้นทุนครบกว่า ผู้ใช้เปลี่ยนเองหรือปิดได้ในหน้านำเข้า
+function bestCostMapping(name: string, grid: unknown[][], layout: SheetLayout, base: ColumnMapping, own: ColumnMapping, found: ColumnMapping) {
+  const options = [{ ...base, ...own }, { ...base, ...found }, base]
+  let best: { mapping: ColumnMapping; preview: SheetPreview; split: SplitResult } | null = null
+  for (const mapping of options) {
+    const r = run(name, grid, layout, mapping)
+    const covered = r.split.cost_mode ? r.split.items.length - r.split.missing_cost_items : 0
+    const bestCovered = best ? (best.split.cost_mode ? best.split.items.length - best.split.missing_cost_items : 0) : -1
+    if (covered > bestCovered) best = { mapping, ...r }
+  }
+  return best!
+}
+
+export function chooseLayout(name: string, grid: unknown[][], tpl: StoredTemplate | null, ai: AiLayout | null): ChosenLayout {
+  const found = detectCostColumns(grid)
   const rulesLayout = detectLayout(grid)
-  const rulesMapping = withCostColumns(autoDetectMapping(buildPreview(name, grid, rulesLayout).headers), cost)
+  const rulesBase = autoDetectMapping(buildPreview(name, grid, rulesLayout).headers)
   const candidates: ChosenLayout[] = []
   let templateRejected = false
 
-  if (tpl) {
+  // Claude อ่านไฟล์นี้ใหม่ทุกครั้ง ใช้ผลของ Claude ก่อน template ที่จำจากไฟล์ก่อน
+  if (ai) {
+    const r = bestCostMapping(name, grid, ai.layout, withoutCost(ai.mapping), ai.mapping, found)
+    candidates.push({ source: 'ai', layout: ai.layout, ...r, template_rejected: false })
+  }
+  if (tpl && !ai) {
     const layout = tpl.layout ?? rulesLayout
-    const mapping = tpl.columns as ColumnMapping
-    const r = run(name, grid, layout, mapping)
-    if (templateMatches(tpl, r.preview, ai?.mapping ?? rulesMapping) && r.split.items.length > 0) {
-      candidates.push({ source: 'template', layout, mapping, ...r, template_rejected: false })
+    const base = withoutCost(tpl.columns as ColumnMapping)
+    const r = bestCostMapping(name, grid, layout, base, {}, found)
+    if (templateMatches(tpl, r.preview, rulesBase) && r.split.items.length > 0) {
+      candidates.push({ source: 'template', layout, ...r, template_rejected: false })
     } else {
       templateRejected = true
     }
   }
-  if (ai) candidates.push({ source: 'ai', layout: ai.layout, mapping: ai.mapping, ...run(name, grid, ai.layout, ai.mapping), template_rejected: false })
-  candidates.push({ source: 'rules', layout: rulesLayout, mapping: rulesMapping, ...run(name, grid, rulesLayout, rulesMapping), template_rejected: false })
+  candidates.push({ source: 'rules', layout: rulesLayout, ...bestCostMapping(name, grid, rulesLayout, rulesBase, {}, found), template_rejected: false })
 
   // Claude บอกว่าไม่ใช่ชีตรายละเอียด BOQ (เช่นปก ใบเสนอราคา) เชื่อ Claude ไม่ไล่หาแหล่งที่แตกได้
   const pick = ai && !ai.is_boq_detail_sheet ? candidates.find(c => c.source === 'ai')! : candidates.find(c => c.split.items.length > 0) ?? candidates[0]
