@@ -135,6 +135,13 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
 
   // กรอกรายการจากเอกสารที่ Claude อ่าน แทนบรรทัดว่าง และต่อท้ายบรรทัดที่กรอกไว้แล้ว
   function applyDocument(r: PurchaseDocumentResult) {
+    // ระบบอาจเลือกโครงการให้จากเลขงานในเอกสาร รายการเดิมเป็นของโครงการอื่นจึงล้างทิ้ง
+    const switched = r.project_id !== projectId
+    if (switched) {
+      setProjectId(r.project_id)
+      setLines(r.lines.length ? [] : [newLine()])
+    }
+    const items = projects.find(p => p.id === r.project_id)?.items ?? []
     setAttachmentPath(r.attachment_path)
     if (r.lines.length === 0) return
     const norm = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase()
@@ -156,7 +163,7 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
         doc_note: rl.note ?? '',
       }
     })
-    setLines(ls => [...ls.filter(l => l.boq_item_id || l.qty || l.unit_price), ...fromDoc])
+    setLines(ls => [...(switched ? [] : ls.filter(l => l.boq_item_id || l.qty || l.unit_price)), ...fromDoc])
     const ref = [r.document_no && `เลขที่ ${r.document_no}`, r.document_date && `วันที่ ${formatThaiDate(r.document_date)}`].filter(Boolean).join(' ')
     if (ref) setNote(n => (n ? `${n}\n` : '') + `จากเอกสาร ${ref}`)
   }
@@ -236,14 +243,14 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-4">
         <FormField label="โครงการ">
-          <Select value={projectId} onChange={e => { setProjectId(e.target.value); setLines([newLine()]) }} required>
+          <Select value={projectId} onChange={e => { setProjectId(e.target.value); setLines([newLine()]); setAttachmentPath(null) }} required>
             <option value="" disabled>เลือกโครงการ</option>
             {projects.map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
           </Select>
         </FormField>
       </div>
 
-      {projectId && online && <PurchaseDocumentReader key={projectId} projectId={projectId} onRead={applyDocument} />}
+      {online && <PurchaseDocumentReader projectId={projectId} candidateIds={projects.map(p => p.id)} onRead={applyDocument} />}
 
       {evaluated.map(({ line, item, ev, boq, unitsUnknown }, idx) => {
         const q = line.search.trim().toLowerCase()

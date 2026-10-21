@@ -25,7 +25,8 @@ async function prepareFile(file: File): Promise<File> {
   }
 }
 
-export function PurchaseDocumentReader({ projectId, onRead }: { projectId: string; onRead: (r: PurchaseDocumentResult) => void }) {
+// projectId ว่าง = ยังไม่ได้เลือกโครงการ ระบบหาโครงการจากเลขงาน (JOB) ในเอกสารจาก candidateIds
+export function PurchaseDocumentReader({ projectId, candidateIds, onRead }: { projectId: string; candidateIds: string[]; onRead: (r: PurchaseDocumentResult) => void }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<PurchaseDocumentResult | null>(null)
@@ -36,7 +37,7 @@ export function PurchaseDocumentReader({ projectId, onRead }: { projectId: strin
     setResult(null)
     const fd = new FormData()
     fd.append('file', await prepareFile(picked))
-    const res = await readPurchaseDocument(projectId, fd)
+    const res = await readPurchaseDocument(projectId || null, candidateIds, fd)
     setPending(false)
     if (!res.ok) {
       setError(res.error)
@@ -81,6 +82,7 @@ export function PurchaseDocumentReader({ projectId, onRead }: { projectId: strin
         <div className="font-medium">อ่านจากรูปใบสั่งซื้อ</div>
         <p className="text-xs text-muted-foreground mt-0.5">
           ถ่ายรูปหรือแนบไฟล์ใบสั่งซื้อ ใบกำกับภาษี หรือใบเสร็จ Claude จะกรอกรายการและจับคู่กับ BOQ ให้ ไฟล์แนบเก็บไว้กับรายการนี้ ตรวจทุกบรรทัดก่อนกดบันทึก
+          {!projectId && ' ยังไม่ต้องเลือกโครงการ ระบบเลือกให้จากเลข JOB ในเอกสาร'}
           <span className="hidden sm:inline"> หรือ copy รูปแล้วกด Ctrl+V ที่หน้านี้ได้เลย</span>
         </p>
       </div>

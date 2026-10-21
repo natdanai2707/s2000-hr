@@ -10,7 +10,7 @@ const boq = [
 
 function doc(over: Partial<ExtractedDoc> = {}): ExtractedDoc {
   return {
-    is_purchase_document: true, supplier_name: 'บจก.เหล็กใต้', document_no: 'PO-001', document_date: '2026-10-17',
+    is_purchase_document: true, supplier_name: 'บจก.เหล็กใต้', document_no: 'PO-001', job_reference: null, project_index: null, document_date: '2026-10-17',
     prices_include_vat: false, subtotal: 92000, discount: null, vat: 6440, grand_total: 98440,
     lines: [
       { description: 'H-BEAM 200x200 6m', qty: 10, unit: 'เส้น', unit_price: 9000, line_total: 90000, boq_index: 0, qty_factor: null, match_note: null },

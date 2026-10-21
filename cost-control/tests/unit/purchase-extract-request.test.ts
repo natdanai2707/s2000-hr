@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { extractPurchaseDocument } from '@/lib/purchase/extract'
+import { extractPurchaseDocument, matchLinesToBoq } from '@/lib/purchase/extract'
 
 // เซิร์ฟเวอร์จำลอง API: ตรวจ request ที่ส่งรูปเอกสารไปให้ Claude อ่าน โดยไม่ต้องใช้ API จริง
 let server: http.Server
@@ -10,7 +10,7 @@ let reply: { status: number; body: unknown } = { status: 200, body: {} }
 const saved = { key: process.env.ANTHROPIC_API_KEY, url: process.env.ANTHROPIC_BASE_URL }
 
 const doc = {
-  is_purchase_document: true, supplier_name: 'บจก.เหล็กใต้', document_no: 'PO-001', document_date: '2026-10-17',
+  is_purchase_document: true, supplier_name: 'บจก.เหล็กใต้', document_no: 'PO-001', job_reference: null, project_index: null, document_date: '2026-10-17',
   prices_include_vat: false, subtotal: 90000, discount: null, vat: 6300, grand_total: 96300,
   lines: [{ description: 'H-BEAM 200x200', qty: 10, unit: 'เส้น', unit_price: 9000, line_total: 90000, boq_index: 0, qty_factor: null, match_note: null }],
   warnings: [],
@@ -73,5 +73,26 @@ describe('ส่งรูปเอกสารจัดซื้อให้ Cla
     delete process.env.ANTHROPIC_API_KEY
     await expect(extractPurchaseDocument({ data: 'AAAA', mediaType: 'image/png' }, boq)).resolves.toEqual({ status: 'off' })
     process.env.ANTHROPIC_API_KEY = key
+  })
+})
+
+describe('ยังไม่ได้เลือกโครงการ: หาโครงการจากเลขงานแล้วจับคู่ BOQ ทีหลัง', () => {
+  it('ส่งรายการโครงการไปด้วย และบอกว่ายังไม่ต้องจับคู่ BOQ', async () => {
+    reply = { status: 200, body: message(JSON.stringify({ ...doc, job_reference: 'A6910-05(V100) / 6492', project_index: 0 })) }
+    const out = await extractPurchaseDocument({ data: 'AAAA', mediaType: 'image/jpeg' }, [], [{ code: 'A6910-05', name: 'งานหลังคา หลังที่ 2' }])
+    expect(out.status === 'ok' && out.doc.job_reference).toBe('A6910-05(V100) / 6492')
+    const text = (last!.body.messages as { content: { text?: string }[] }[])[0].content[1].text!
+    expect(text).toContain('[0] A6910-05 | งานหลังคา หลังที่ 2')
+    expect(text).toContain('ยังไม่ได้เลือกโครงการ')
+  })
+
+  it('จับคู่บรรทัดกับ BOQ ด้วยข้อความอย่างเดียว ไม่ส่งรูปซ้ำ', async () => {
+    reply = { status: 200, body: message(JSON.stringify({ lines: [{ line_index: 0, boq_index: 0, qty_factor: 299.4, match_note: null }] })) }
+    const out = await matchLinesToBoq([{ description: 'H-BEAM 200x200', unit: 'เส้น' }], boq)
+    expect(out).toEqual({ status: 'ok', matches: [{ line_index: 0, boq_index: 0, qty_factor: 299.4, match_note: null }] })
+    const content = (last!.body.messages as { content: unknown }[])[0].content
+    expect(typeof content).toBe('string')
+    expect(content).toContain('[0] H-BEAM 200x200 | หน่วย เส้น')
+    expect(content).toContain('[0] เหล็ก H-BEAM (49.9 kg/m) Size 6 m. | หน่วย kg')
   })
 })

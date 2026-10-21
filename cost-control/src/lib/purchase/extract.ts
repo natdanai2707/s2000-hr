@@ -27,6 +27,12 @@ const DocSchema = z.object({
   is_purchase_document: z.boolean().describe('true ถ้าเป็นใบสั่งซื้อ ใบเสนอราคา ใบกำกับภาษี ใบส่งของ หรือใบเสร็จที่มีรายการสินค้าและราคา'),
   supplier_name: z.string().nullable().describe('ชื่อผู้ขาย (ไม่ใช่ชื่อบริษัทผู้ซื้อ เอส-2000)'),
   document_no: z.string().nullable(),
+  job_reference: z.string().nullable().describe('เลขงานหรือ JOB ที่พิมพ์ในเอกสาร เช่น A6910-05(V100) / 6492 ตามที่เห็นทุกตัวอักษร null ถ้าไม่มี'),
+  project_index: z
+    .number()
+    .int()
+    .nullable()
+    .describe('เลข [n] ของโครงการในรายการโครงการที่ตรงกับเลขงานหรือชื่องานในเอกสาร null ถ้าไม่ตรงหรือไม่แน่ใจ'),
   document_date: z.string().nullable().describe('วันที่เอกสารแบบ YYYY-MM-DD ปี ค.ศ. ถ้าเอกสารเป็น พ.ศ. ให้ลบ 543'),
   prices_include_vat: z.boolean().describe('ราคาต่อหน่วยและจำนวนเงินรายบรรทัดในเอกสารรวม VAT แล้วหรือไม่'),
   subtotal: z.number().nullable().describe('ยอดรวมรายการก่อนส่วนลดและ VAT ตามที่พิมพ์'),
@@ -42,6 +48,11 @@ export type ExtractedDoc = z.infer<typeof DocSchema>
 export interface BoqChoice {
   description: string
   unit: string | null
+}
+
+export interface ProjectChoice {
+  code: string
+  name: string
 }
 
 export type ExtractOutcome = { status: 'ok'; doc: ExtractedDoc } | { status: 'off' } | { status: 'failed'; reason: string }
@@ -60,7 +71,9 @@ const SYSTEM = `คุณคือผู้ช่วยอ่านเอกส�
    qty_factor คือจำนวนหน่วย BOQ ต่อหนึ่งหน่วยในเอกสาร หาได้จากข้อมูลในชื่อรายการ เช่น 49.9 kg/m ยาว 6 m = 299.4 kg ต่อเส้น
    ถ้าหาไม่ได้จากข้อมูลที่เห็น ให้ null และบอกใน match_note
 5. ราคาในเอกสารไทยอาจรวม VAT หรือไม่รวม ดูจากหัวคอลัมน์และท้ายบิล ถ้าท้ายบิลมีบรรทัด VAT แยก แปลว่าราคารายการไม่รวม VAT
-6. บรรทัดค่าขนส่งหรือค่าบริการให้ใส่เป็นรายการด้วย`
+6. บรรทัดค่าขนส่งหรือค่าบริการให้ใส่เป็นรายการด้วย
+7. เอกสารของเอส-2000 มักมีช่อง JOB หรือเลขงาน เช่น A6910-05(V100) ให้ใส่ใน job_reference ตามที่พิมพ์
+   แล้วเลือกโครงการที่เลขงานตรงกันใน project_index ถ้าไม่มีเลขงาน ดูจากชื่องานหรือสถานที่ในหมายเหตุ ถ้าไม่แน่ใจให้ null`
 
 function boqList(items: BoqChoice[]): string {
   return items
@@ -69,9 +82,18 @@ function boqList(items: BoqChoice[]): string {
     .join('\n')
 }
 
+function projectList(projects: ProjectChoice[]): string {
+  return projects
+    .slice(0, 200)
+    .map((p, i) => `[${i}] ${p.code} | ${p.name.replace(/\s+/g, ' ').slice(0, 140)}`)
+    .join('\n')
+}
+
+// boq ว่าง = ยังไม่รู้โครงการ อ่านเอกสารและเลขงานก่อน แล้วจับคู่กับ BOQ ทีหลังด้วย matchLinesToBoq
 export async function extractPurchaseDocument(
   file: { data: string; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif' | 'application/pdf' },
-  boq: BoqChoice[]
+  boq: BoqChoice[],
+  projects: ProjectChoice[] = []
 ): Promise<ExtractOutcome> {
   if (!analysisEnabled()) return { status: 'off' }
   try {
@@ -89,7 +111,18 @@ export async function extractPurchaseDocument(
       messages: [
         {
           role: 'user',
-          content: [source, { type: 'text', text: `รายการ BOQ ของโครงการนี้\n${boqList(boq) || '(ไม่มี)'}\n\nอ่านเอกสารนี้แล้วจับคู่กับรายการด้านบน` }],
+          content: [
+            source,
+            {
+              type: 'text',
+              text: [
+                `รายการโครงการ\n${projectList(projects) || '(ไม่มี)'}`,
+                boq.length
+                  ? `รายการ BOQ ของโครงการที่ผู้ใช้เลือก\n${boqList(boq)}\n\nอ่านเอกสารนี้แล้วจับคู่กับรายการ BOQ ด้านบน`
+                  : 'ผู้ใช้ยังไม่ได้เลือกโครงการ อ่านเอกสารนี้ หาเลขงานและโครงการ ให้ boq_index และ qty_factor เป็น null ทุกบรรทัด',
+              ].join('\n\n'),
+            },
+          ],
         },
       ],
     })
@@ -100,6 +133,49 @@ export async function extractPurchaseDocument(
     return { status: 'ok', doc }
   } catch (e) {
     console.error('อ่านเอกสารจัดซื้อไม่สำเร็จ:', e)
+    return { status: 'failed', reason: describeApiError(e) }
+  }
+}
+
+const MatchSchema = z.object({
+  lines: z.array(
+    z.object({
+      line_index: z.number().int().describe('เลข [n] ของบรรทัดในเอกสาร'),
+      boq_index: Line.shape.boq_index,
+      qty_factor: Line.shape.qty_factor,
+      match_note: Line.shape.match_note,
+    })
+  ),
+})
+
+export type MatchOutcome = { status: 'ok'; matches: z.infer<typeof MatchSchema>['lines'] } | { status: 'off' } | { status: 'failed'; reason: string }
+
+// จับคู่บรรทัดที่อ่านจากเอกสารแล้วกับ BOQ ของโครงการที่หาได้จากเลขงาน ส่งเฉพาะข้อความ ไม่ส่งรูปซ้ำ
+export async function matchLinesToBoq(lines: { description: string; unit: string | null }[], boq: BoqChoice[]): Promise<MatchOutcome> {
+  if (!analysisEnabled()) return { status: 'off' }
+  try {
+    const docLines = lines.map((l, i) => `[${i}] ${l.description.replace(/\s+/g, ' ').slice(0, 160)} | หน่วย ${l.unit ?? '-'}`).join('\n')
+    const response = await anthropicClient().beta.messages.parse({
+      model: CLAUDE_MODEL,
+      max_tokens: 8000,
+      system: SYSTEM,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'medium', format: betaZodOutputFormat(MatchSchema) },
+      messages: [
+        {
+          role: 'user',
+          content: `รายการ BOQ ของโครงการนี้\n${boqList(boq) || '(ไม่มี)'}\n\nบรรทัดที่อ่านจากเอกสารจัดซื้อ\n${docLines}\n\nจับคู่ทุกบรรทัดในเอกสารกับรายการ BOQ ด้านบน`,
+        },
+      ],
+    })
+    if (response.stop_reason === 'refusal') return { status: 'failed', reason: 'Claude ปฏิเสธการจับคู่รายการ' }
+    if (response.stop_reason === 'max_tokens') return { status: 'failed', reason: 'รายการยาวเกินกำหนด' }
+    const out = response.parsed_output
+    if (!out) return { status: 'failed', reason: 'อ่านคำตอบไม่ได้' }
+    return { status: 'ok', matches: out.lines }
+  } catch (e) {
+    console.error('จับคู่รายการกับ BOQ ไม่สำเร็จ:', e)
     return { status: 'failed', reason: describeApiError(e) }
   }
 }
