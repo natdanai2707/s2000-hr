@@ -45,6 +45,12 @@ const DocSchema = z.object({
 
 export type ExtractedDoc = z.infer<typeof DocSchema>
 
+// เอกสารที่อ่านแล้วแต่ยังไม่รู้โครงการ ฝั่งเบราว์เซอร์ส่งกลับมาตอนผู้ใช้เลือกโครงการ ตรวจรูปแบบก่อนใช้
+export function parseExtractedDoc(v: unknown): ExtractedDoc | null {
+  const r = DocSchema.safeParse(v)
+  return r.success ? r.data : null
+}
+
 export interface BoqChoice {
   description: string
   unit: string | null
