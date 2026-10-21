@@ -7,7 +7,8 @@ import { usesDirectPurchase } from '@/lib/types'
 import { notify, approverIdsFor } from '@/lib/notifications'
 import { formatBaht } from '@/lib/format'
 import { safeObjectName } from '@/lib/storage'
-import { extractPurchaseDocument } from '@/lib/purchase/extract'
+import { extractPurchaseDocument, matchLinesToBoq } from '@/lib/purchase/extract'
+import { matchProjectByJob } from '@/lib/purchase/job'
 import { reviewExtraction, type ReviewedLine } from '@/lib/purchase/review'
 import { fail, type ActionResult } from './types'
 
@@ -245,6 +246,9 @@ export async function setPurchaseQtyFactor(prItemId: string, factor: number | nu
 }
 
 export interface PurchaseDocumentResult {
+  // โครงการที่ใช้อ่าน: ที่ผู้ใช้เลือก หรือที่หาได้จากเลขงานในเอกสาร
+  project_id: string
+  job_reference: string | null
   attachment_path: string
   // null เมื่ออ่านด้วย Claude ไม่ได้ ไฟล์ยังแนบไว้ได้ ผู้ใช้กรอกรายการเอง
   read_error: string | null
@@ -263,7 +267,8 @@ const DOC_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'applic
 type DocType = (typeof DOC_TYPES)[number]
 
 // อัปโหลดรูปหรือ PDF ของเอกสารจัดซื้อ ให้ Claude อ่านรายการ แล้วตรวจตัวเลขด้วยโค้ด ส่งกลับไปให้ฟอร์มกรอกให้
-export async function readPurchaseDocument(projectId: string, fd: FormData): Promise<ActionResult<PurchaseDocumentResult>> {
+// projectId ว่างได้: อ่านเลขงาน (JOB) ในเอกสารแล้วเลือกโครงการจาก candidateIds ให้ จากนั้นจับคู่รายการกับ BOQ ของโครงการนั้น
+export async function readPurchaseDocument(projectId: string | null, candidateIds: string[], fd: FormData): Promise<ActionResult<PurchaseDocumentResult>> {
   await requireUser()
   const supabase = await createClient()
   const file = fd.get('file')
@@ -271,37 +276,92 @@ export async function readPurchaseDocument(projectId: string, fd: FormData): Pro
   if (!(DOC_TYPES as readonly string[]).includes(file.type)) return fail('รองรับรูป JPG PNG WEBP และไฟล์ PDF')
   if (file.size > 4 * 1024 * 1024) return fail('ไฟล์ใหญ่เกิน 4MB')
 
-  const { data: summary } = await supabase.from('v_project_summary').select('confirmed_version_id').eq('project_id', projectId).maybeSingle()
-  if (!summary?.confirmed_version_id) return fail('โครงการนี้ยังไม่มี BOQ ที่ยืนยัน')
-  const { data: boq } = await supabase
-    .from('boq_items')
-    .select('id, description, unit')
-    .eq('boq_version_id', summary.confirmed_version_id)
-    .gte('qty', 0)
-    .order('sort_order')
+  const ids = [...new Set([...(projectId ? [projectId] : []), ...candidateIds])].slice(0, 300)
+  const { data: summaries } = ids.length
+    ? await supabase.from('v_project_summary').select('project_id, code, name, confirmed_version_id').in('project_id', ids).not('confirmed_version_id', 'is', null)
+    : { data: [] }
+  const projects = (summaries ?? []).map(p => ({ id: p.project_id as string, code: p.code as string, name: p.name as string, version: p.confirmed_version_id as string }))
+  if (projectId && !projects.some(p => p.id === projectId)) return fail('โครงการนี้ยังไม่มี BOQ ที่ยืนยัน')
+  if (projects.length === 0) return fail('ไม่มีโครงการที่มี BOQ ยืนยันแล้ว')
 
+  const loadBoq = async (id: string) => {
+    const { data } = await supabase
+      .from('boq_items')
+      .select('id, description, unit')
+      .eq('boq_version_id', projects.find(p => p.id === id)!.version)
+      .gte('qty', 0)
+      .order('sort_order')
+    return data ?? []
+  }
   const buffer = Buffer.from(await file.arrayBuffer())
   const ext = file.type === 'application/pdf' ? 'pdf' : file.type.split('/')[1]
-  const path = `projects/${projectId}/purchases/${safeObjectName(file.name || `document.${ext}`, ext)}`
-  const { error: upErr } = await supabase.storage.from('project-files').upload(path, buffer, { contentType: file.type })
-  if (upErr) return fail(`อัปโหลดไฟล์ไม่สำเร็จ: ${upErr.message}`)
-
-  const empty: PurchaseDocumentResult = {
-    attachment_path: path, read_error: null, supplier_name: null, document_no: null, document_date: null,
-    grand_total: null, total_excl_vat: null, lines: [], issues: [], notes: [], warnings: [],
+  const upload = async (id: string): Promise<string | ActionResult<never>> => {
+    const path = `projects/${id}/purchases/${safeObjectName(file.name || `document.${ext}`, ext)}`
+    const { error } = await supabase.storage.from('project-files').upload(path, buffer, { contentType: file.type })
+    return error ? fail(`อัปโหลดไฟล์ไม่สำเร็จ: ${error.message}`) : path
   }
-  const outcome = await extractPurchaseDocument({ data: buffer.toString('base64'), mediaType: file.type as DocType }, boq ?? [])
-  if (outcome.status === 'off') return { ok: true, data: { ...empty, read_error: 'ระบบยังเรียก Claude ไม่ได้ เพราะไม่พบ ANTHROPIC_API_KEY บนเซิร์ฟเวอร์' } }
-  if (outcome.status === 'failed') return { ok: true, data: { ...empty, read_error: `เรียก Claude ไม่สำเร็จ (${outcome.reason})` } }
+  const empty = (id: string, path: string): PurchaseDocumentResult => ({
+    project_id: id, job_reference: null, attachment_path: path, read_error: null, supplier_name: null, document_no: null, document_date: null,
+    grand_total: null, total_excl_vat: null, lines: [], issues: [], notes: [], warnings: [],
+  })
+  // อ่านไม่ได้: ถ้ารู้โครงการ แนบไฟล์ไว้ให้กรอกเอง ถ้าไม่รู้ ให้เลือกโครงการก่อน
+  const unread = async (message: string): Promise<ActionResult<PurchaseDocumentResult>> => {
+    if (!projectId) return fail(`${message} เลือกโครงการแล้วลองใหม่`)
+    const path = await upload(projectId)
+    if (typeof path !== 'string') return path
+    return { ok: true, data: { ...empty(projectId, path), read_error: message } }
+  }
+
+  let boq = projectId ? await loadBoq(projectId) : []
+  const outcome = await extractPurchaseDocument({ data: buffer.toString('base64'), mediaType: file.type as DocType }, boq, projects)
+  if (outcome.status === 'off') return unread('ระบบยังเรียก Claude ไม่ได้ เพราะไม่พบ ANTHROPIC_API_KEY บนเซิร์ฟเวอร์')
+  if (outcome.status === 'failed') return unread(`เรียก Claude ไม่สำเร็จ (${outcome.reason})`)
   const doc = outcome.doc
   if (!doc.is_purchase_document || doc.lines.length === 0) {
-    return { ok: true, data: { ...empty, read_error: 'ไม่พบรายการสินค้าในเอกสารนี้ ตรวจว่าเป็นใบสั่งซื้อ ใบกำกับภาษี หรือใบเสร็จ และรูปชัดพอ' } }
+    return unread('ไม่พบรายการสินค้าในเอกสารนี้ ตรวจว่าเป็นใบสั่งซื้อ ใบกำกับภาษี หรือใบเสร็จ และรูปชัดพอ')
   }
-  const review = reviewExtraction(doc, boq ?? [])
+
+  // โค้ดเทียบเลขงานกับรหัสและชื่อโครงการก่อน ถ้าไม่เจอจึงใช้โครงการที่ Claude เลือกจากชื่องาน
+  const byJob = matchProjectByJob(doc.job_reference, projects)
+  const byClaude = doc.project_index !== null && doc.project_index >= 0 && doc.project_index < projects.length ? projects[doc.project_index].id : null
+  const detected = byJob ?? byClaude
+  const label = (id: string) => {
+    const p = projects.find(x => x.id === id)!
+    return `${p.code} ${p.name}`
+  }
+  const projectNotes: string[] = []
+  const warnings: string[] = []
+  let chosen = projectId
+  if (!chosen) {
+    if (!detected) return fail(`ไม่พบโครงการที่ตรงกับเลขงานในเอกสาร${doc.job_reference ? ` (${doc.job_reference})` : ''} เลือกโครงการแล้วลองใหม่`)
+    chosen = detected
+    projectNotes.push(
+      byJob
+        ? `เลือกโครงการ ${label(chosen)} จากเลขงาน ${doc.job_reference}`
+        : `Claude เลือกโครงการ ${label(chosen)} จากชื่องานในเอกสาร ตรวจว่าถูกโครงการก่อนบันทึก`
+    )
+    boq = await loadBoq(chosen)
+    const match = await matchLinesToBoq(doc.lines, boq)
+    if (match.status === 'ok') {
+      for (const m of match.matches) {
+        const line = doc.lines[m.line_index]
+        if (line) Object.assign(line, { boq_index: m.boq_index, qty_factor: m.qty_factor, match_note: m.match_note })
+      }
+    } else {
+      warnings.push('จับคู่รายการกับ BOQ ไม่สำเร็จ เลือกรายการ BOQ เองทุกบรรทัด')
+    }
+  } else if (detected && detected !== chosen) {
+    warnings.push(`เลขงานในเอกสาร${doc.job_reference ? ` ${doc.job_reference}` : ''} ตรงกับโครงการ ${label(detected)} ไม่ใช่โครงการที่เลือก ตรวจว่าเลือกโครงการถูก`)
+  }
+
+  const path = await upload(chosen)
+  if (typeof path !== 'string') return path
+  const review = reviewExtraction(doc, boq)
   return {
     ok: true,
     data: {
-      ...empty,
+      ...empty(chosen, path),
+      job_reference: doc.job_reference,
       supplier_name: doc.supplier_name,
       document_no: doc.document_no,
       document_date: doc.document_date,
@@ -309,8 +369,8 @@ export async function readPurchaseDocument(projectId: string, fd: FormData): Pro
       total_excl_vat: review.total_excl_vat,
       lines: review.lines,
       issues: review.issues,
-      notes: review.notes,
-      warnings: doc.warnings.slice(0, 4),
+      notes: [...projectNotes, ...review.notes],
+      warnings: [...warnings, ...doc.warnings].slice(0, 5),
     },
   }
 }
