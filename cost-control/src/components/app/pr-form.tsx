@@ -16,8 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import { VatPriceInput } from './vat-price-input'
-import { PurchaseDocumentReader } from './purchase-document-reader'
-import type { PurchaseDocumentResult } from '@/actions/purchase-requests'
+import type { PurchaseDocumentResult } from '@/lib/purchase/document-types'
 import { formatThaiDate } from '@/lib/date'
 import { suggestConversion, toBoqUnits } from '@/lib/units'
 import { SupplierCombobox } from './supplier-combobox'
@@ -77,19 +76,69 @@ function knownFactor(l: Line): number | null {
   return f === null || Number.isNaN(f) ? null : f
 }
 
+// แปลงผลอ่านเอกสารเป็นบรรทัดในฟอร์ม ผู้ใช้ตรวจและแก้ได้ทุกช่องก่อนบันทึก
+function linesFromDocument(r: PurchaseDocumentResult, items: PrFormItem[], suppliers: { id: string; name: string }[]): Line[] {
+  const norm = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase()
+  const sup = r.supplier_name ? suppliers.find(x => norm(x.name) === norm(r.supplier_name!)) : undefined
+  return r.lines.map(rl => {
+    const item = items.find(i => i.id === rl.boq_item_id)
+    const differ = rl.qty_factor !== 1
+    return {
+      ...newLine(),
+      boq_item_id: item?.id ?? '',
+      qty: rl.qty !== null ? String(rl.qty) : '',
+      unit_price: rl.unit_price !== null ? String(rl.unit_price) : '',
+      supplier_id: sup?.id ?? '',
+      supplier_name: sup?.name ?? r.supplier_name ?? '',
+      buy_other: !!item && differ,
+      buy_unit: differ ? rl.unit ?? '' : '',
+      factor: differ && rl.qty_factor ? String(rl.qty_factor) : '',
+      doc_text: `${rl.description}${rl.qty !== null ? ` · ${rl.qty} ${rl.unit ?? ''}` : ''}`,
+      doc_note: rl.note ?? '',
+    }
+  })
+}
+
+function documentNote(r: PurchaseDocumentResult): string {
+  const ref = [r.document_no && `เลขที่ ${r.document_no}`, r.document_date && `วันที่ ${formatThaiDate(r.document_date)}`].filter(Boolean).join(' ')
+  return ref ? `จากเอกสาร ${ref}` : ''
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-export function PrForm({ projects, suppliers, settings, initialProjectId, directMode = false }: { projects: PrFormProject[]; suppliers: { id: string; name: string }[]; settings: Settings; initialProjectId: string | null; directMode?: boolean }) {
+// initialDocument = เอกสารที่ Claude อ่านแล้ว ฟอร์มเริ่มจากโครงการและรายการในเอกสาร
+// onSaved = ใช้ในการแนบหลายใบ บันทึกแล้วไม่เปลี่ยนหน้า ให้ผู้ใช้ทำใบถัดไปต่อ
+export function PrForm({
+  projects,
+  suppliers,
+  settings,
+  initialProjectId,
+  directMode = false,
+  initialDocument,
+  onSaved,
+}: {
+  projects: PrFormProject[]
+  suppliers: { id: string; name: string }[]
+  settings: Settings
+  initialProjectId: string | null
+  directMode?: boolean
+  initialDocument?: PurchaseDocumentResult
+  onSaved?: (pr: { id: string; pr_no: string }) => void
+}) {
   const router = useRouter()
-  const [projectId, setProjectId] = useState(initialProjectId && projects.some(p => p.id === initialProjectId) ? initialProjectId : projects.length === 1 ? projects[0].id : '')
-  const [lines, setLines] = useState<Line[]>([newLine()])
-  const [note, setNote] = useState('')
+  const startProject = initialDocument?.project_id ?? initialProjectId
+  const [projectId, setProjectId] = useState(startProject && projects.some(p => p.id === startProject) ? startProject : projects.length === 1 ? projects[0].id : '')
+  const [lines, setLines] = useState<Line[]>(() => {
+    const docLines = initialDocument ? linesFromDocument(initialDocument, projects.find(p => p.id === initialDocument.project_id)?.items ?? [], suppliers) : []
+    return docLines.length ? docLines : [newLine()]
+  })
+  const [note, setNote] = useState(() => (initialDocument ? documentNote(initialDocument) : ''))
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null)
-  const [attachmentPath, setAttachmentPath] = useState<string | null>(null)
+  const [attachmentPath, setAttachmentPath] = useState<string | null>(initialDocument?.attachment_path ?? null)
   const online = useOnline()
 
   const project = projects.find(p => p.id === projectId)
@@ -131,41 +180,6 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
       qty: line.qty === '' || !ok ? line.qty : String(Math.round((on ? Number(line.qty) / f : Number(line.qty) * f) * 1000) / 1000),
       unit_price: line.unit_price === '' || !ok ? line.unit_price : String(round2(on ? Number(line.unit_price) * f : Number(line.unit_price) / f)),
     })
-  }
-
-  // กรอกรายการจากเอกสารที่ Claude อ่าน แทนบรรทัดว่าง และต่อท้ายบรรทัดที่กรอกไว้แล้ว
-  function applyDocument(r: PurchaseDocumentResult) {
-    // ระบบอาจเลือกโครงการให้จากเลขงานในเอกสาร รายการเดิมเป็นของโครงการอื่นจึงล้างทิ้ง
-    const switched = r.project_id !== projectId
-    if (switched) {
-      setProjectId(r.project_id)
-      setLines(r.lines.length ? [] : [newLine()])
-    }
-    const items = projects.find(p => p.id === r.project_id)?.items ?? []
-    setAttachmentPath(r.attachment_path)
-    if (r.lines.length === 0) return
-    const norm = (t: string) => t.trim().replace(/\s+/g, ' ').toLowerCase()
-    const sup = r.supplier_name ? suppliers.find(x => norm(x.name) === norm(r.supplier_name!)) : undefined
-    const fromDoc: Line[] = r.lines.map(rl => {
-      const item = items.find(i => i.id === rl.boq_item_id)
-      const differ = rl.qty_factor !== 1
-      return {
-        ...newLine(),
-        boq_item_id: item?.id ?? '',
-        qty: rl.qty !== null ? String(rl.qty) : '',
-        unit_price: rl.unit_price !== null ? String(rl.unit_price) : '',
-        supplier_id: sup?.id ?? '',
-        supplier_name: sup?.name ?? r.supplier_name ?? '',
-        buy_other: !!item && differ,
-        buy_unit: differ ? rl.unit ?? '' : '',
-        factor: differ && rl.qty_factor ? String(rl.qty_factor) : '',
-        doc_text: `${rl.description}${rl.qty !== null ? ` · ${rl.qty} ${rl.unit ?? ''}` : ''}`,
-        doc_note: rl.note ?? '',
-      }
-    })
-    setLines(ls => [...(switched ? [] : ls.filter(l => l.boq_item_id || l.qty || l.unit_price)), ...fromDoc])
-    const ref = [r.document_no && `เลขที่ ${r.document_no}`, r.document_date && `วันที่ ${formatThaiDate(r.document_date)}`].filter(Boolean).join(' ')
-    if (ref) setNote(n => (n ? `${n}\n` : '') + `จากเอกสาร ${ref}`)
   }
 
   function update(key: string, patch: Partial<Line>) {
@@ -225,6 +239,10 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
         setError(res.error)
         return
       }
+      if (onSaved) {
+        onSaved(res.data)
+        return
+      }
       router.push(`/pr/${res.data.id}`)
       router.refresh()
     } catch {
@@ -249,8 +267,6 @@ export function PrForm({ projects, suppliers, settings, initialProjectId, direct
           </Select>
         </FormField>
       </div>
-
-      {online && <PurchaseDocumentReader projectId={projectId} candidateIds={projects.map(p => p.id)} onRead={applyDocument} />}
 
       {evaluated.map(({ line, item, ev, boq, unitsUnknown }, idx) => {
         const q = line.search.trim().toLowerCase()

@@ -2,10 +2,8 @@ import { requireUser, loadSettings } from '@/lib/auth'
 import { usesDirectPurchase } from '@/lib/types'
 import { createClient } from '@/lib/supabase/server'
 import { PageHeader, EmptyState } from '@/components/app/common'
-import { PrForm, type PrFormProject } from '@/components/app/pr-form'
-
-// การอ่านรูปใบสั่งซื้อด้วย Claude ใช้เวลา จึงขยายเวลาสูงสุดของฟังก์ชันนี้
-export const maxDuration = 300
+import type { PrFormProject } from '@/components/app/pr-form'
+import { PurchaseEntry } from '@/components/app/purchase-entry'
 
 export default async function NewPrPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const user = await requireUser()
@@ -62,7 +60,7 @@ export default async function NewPrPage({ searchParams }: { searchParams: Promis
       {projects.length === 0 ? (
         <EmptyState title="ไม่มีโครงการที่สร้างใบขอซื้อได้" hint="ต้องเป็นสมาชิกโครงการที่ BOQ ยืนยันแล้ว" />
       ) : (
-        <PrForm projects={projects} suppliers={suppliers ?? []} settings={settings} initialProjectId={project ?? null} directMode={direct} />
+        <PurchaseEntry projects={projects} suppliers={suppliers ?? []} settings={settings} initialProjectId={project ?? null} directMode={direct} />
       )}
     </div>
   )
