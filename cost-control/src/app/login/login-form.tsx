@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,11 @@ export function LoginForm({ next, initialError }: { next: string; initialError: 
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(initialError)
   const [loading, setLoading] = useState(false)
+
+  // บัญชียังไม่เปิดใช้งาน ล้าง session ในเบราว์เซอร์ด้วย ฝั่งเซิร์ฟเวอร์ลบ cookie จากหน้าเพจไม่ได้
+  useEffect(() => {
+    if (initialError) void createClient().auth.signOut()
+  }, [initialError])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()

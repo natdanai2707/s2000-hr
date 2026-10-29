@@ -312,7 +312,7 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
   })
 
   it('profiles: ผู้ใช้ทั่วไปเปลี่ยน role ตัวเองไม่ได้', async () => {
-    await expect(runAs(client, engA, q => q(`update public.profiles set role = 'management' where id = $1`, [engA]))).rejects.toThrow(/admin/)
+    await expect(runAs(client, engA, q => q(`update public.profiles set role = 'management' where id = $1`, [engA]))).rejects.toThrow(/ไม่มีสิทธิ์/)
     await runAs(client, engA, q => q(`update public.profiles set full_name = 'วิศวกร A2' where id = $1`, [engA]))
   })
 
@@ -666,5 +666,20 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
 
     // วิศวกรที่ไม่ได้อยู่ในโครงการไม่เห็นบิล
     expect((await runAs(client, engB, async q => (await q(`select id from public.customer_billings`)).rows)).length).toBe(0)
+  })
+
+  it('สมัครใช้งานเอง: ตั้งสิทธิ์ตัวเองไม่ได้ บัญชีรออนุมัติ และแก้สิทธิ์หรือเปิดบัญชีตัวเองไม่ได้', async () => {
+    // ผู้สมัครแอบใส่ role ใน user_metadata ระบบไม่เชื่อ
+    const self = (await client.query(`insert into auth.users (email, raw_user_meta_data) values ('new@test', '{"full_name": "ผู้สมัคร", "role": "management"}') returning id`)).rows[0].id as string
+    const prof = (await client.query(`select role, is_active, full_name from public.profiles where id = $1`, [self])).rows[0]
+    expect(prof).toEqual({ role: 'engineer', is_active: false, full_name: 'ผู้สมัคร' })
+
+    await expect(runAs(client, self, q => q(`update public.profiles set is_active = true, role = 'management' where id = $1`, [self]))).rejects.toThrow(/ไม่มีสิทธิ์/)
+    await expect(runAs(client, engA, q => q(`update public.profiles set role = 'management' where id = $1`, [engA]))).rejects.toThrow(/ไม่มีสิทธิ์/)
+    // แก้ชื่อตัวเองได้
+    await runAs(client, engA, q => q(`update public.profiles set full_name = 'วิศวกร A ใหม่' where id = $1`, [engA]))
+    // เปิดบัญชีด้วย service role (ไม่มี jwt) ได้
+    await client.query(`update public.profiles set is_active = true, role = 'accounting' where id = $1`, [self])
+    expect((await client.query(`select role from public.profiles where id = $1`, [self])).rows[0].role).toBe('accounting')
   })
 })

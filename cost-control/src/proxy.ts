@@ -27,7 +27,7 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
-  const isPublic = pathname.startsWith('/login') || pathname.startsWith('/offline')
+  const isPublic = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/offline')
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()
@@ -35,7 +35,9 @@ export async function proxy(request: NextRequest) {
     url.searchParams.set('next', pathname)
     return NextResponse.redirect(url)
   }
-  if (user && pathname.startsWith('/login')) {
+  // บัญชียังไม่เปิดใช้งานถูกส่งกลับมาที่หน้า login พร้อม error=inactive ต้องแสดงหน้า login ไม่งั้นวนส่งกลับไปมา
+  const inactiveBounce = request.nextUrl.searchParams.get('error') === 'inactive'
+  if (user && !inactiveBounce && (pathname.startsWith('/login') || pathname.startsWith('/register'))) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     url.search = ''

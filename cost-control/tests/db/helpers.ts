@@ -23,8 +23,8 @@ export async function resetDatabase(client: Client) {
 
 export async function createUser(client: Client, email: string, fullName: string, role: string): Promise<string> {
   const { rows } = await client.query(
-    `insert into auth.users (email, raw_user_meta_data) values ($1, $2::jsonb) returning id`,
-    [email, JSON.stringify({ full_name: fullName, role })]
+    `insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+    [email, JSON.stringify({ full_name: fullName }), JSON.stringify({ role })]
   )
   return rows[0].id
 }
