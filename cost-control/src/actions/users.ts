@@ -46,7 +46,9 @@ export async function createUserAccount(fd: FormData): Promise<ActionResult<{ em
     email,
     password,
     email_confirm: true,
-    user_metadata: { full_name: fullName, role },
+    user_metadata: { full_name: fullName },
+    // สิทธิ์ใส่ใน app_metadata ซึ่งผู้ใช้แก้เองไม่ได้ ฐานข้อมูลอ่านจากที่นี่และเปิดบัญชีให้ทันที
+    app_metadata: { role },
   })
   if (error) return fail(/already/i.test(error.message) ? `อีเมล ${email} มีบัญชีอยู่แล้ว` : error.message)
   // trigger สร้างโปรไฟล์ให้แล้ว ตั้งชื่อและสิทธิ์ซ้ำเผื่อ trigger อ่าน metadata ไม่ได้
@@ -76,6 +78,8 @@ export async function updateUserAccount(id: string, patch: { full_name?: string;
     .update({ ...patch, ...(patch.full_name !== undefined ? { full_name: patch.full_name.trim() } : {}) })
     .eq('id', id)
   if (error) return fail(error)
+  // เปิดบัญชีที่สมัครเองแล้ว ไม่ถือเป็นคำขอรออนุมัติอีก แม้ภายหลังจะถูกปิดบัญชี
+  if (patch.is_active === true) await admin.auth.admin.updateUserById(id, { user_metadata: { self_registered: false } })
   revalidatePath('/admin/users')
   return { ok: true, data: undefined }
 }

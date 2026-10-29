@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { sendLine } from './line'
 
 // notification service แบบ pluggable: in-app (ตาราง notifications) และ LINE
-// เหตุการณ์: pr_pending, pr_decided, goods_received, project_warning, invoice_due
+// เหตุการณ์: pr_pending, pr_decided, goods_received, project_warning, invoice_due, user_registered
 
 export type NotificationEvent =
   | 'pr_pending'
@@ -11,6 +11,7 @@ export type NotificationEvent =
   | 'goods_received'
   | 'project_warning'
   | 'invoice_due'
+  | 'user_registered'
 
 export interface NotificationPayload {
   event: NotificationEvent
@@ -83,4 +84,11 @@ export async function approverIdsFor(projectId: string, status: 'pending_pm' | '
     ids.push(...(members ?? []).map(m => m.user_id))
   }
   return ids
+}
+
+// ผู้ที่อนุมัติบัญชีที่สมัครเองได้: ฝ่ายบริหารและผู้ดูแลระบบ
+export async function userManagerIds(): Promise<string[]> {
+  const admin = createAdminClient()
+  const { data } = await admin.from('profiles').select('id').in('role', ['management', 'admin']).eq('is_active', true)
+  return (data ?? []).map(p => p.id)
 }

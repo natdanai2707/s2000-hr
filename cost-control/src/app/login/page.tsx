@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { LoginForm } from './login-form'
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
@@ -9,7 +10,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <h1 className="text-xl font-semibold text-primary">S-2000 Project Cost Control</h1>
           <p className="text-sm text-muted-foreground mt-1">บริษัท เอส-2000 สตีล แฟบริเคท จำกัด</p>
         </div>
-        <LoginForm next={next ?? '/'} initialError={error === 'inactive' ? 'บัญชีนี้ถูกปิดการใช้งาน' : null} />
+        <LoginForm
+          next={next ?? '/'}
+          initialError={error === 'inactive' ? 'บัญชีนี้ยังไม่เปิดใช้งาน ถ้าเพิ่งสมัคร รอฝ่ายบริหารเปิดบัญชีให้ก่อน' : null}
+        />
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          ยังไม่มีบัญชี <Link href="/register" className="underline text-foreground">สมัครใช้งาน</Link>
+        </p>
       </div>
     </div>
   )
