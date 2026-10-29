@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { HeaderMore } from './header-more'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { formatBaht } from '@/lib/format'
@@ -11,16 +12,19 @@ import {
   BOQ_VERSION_STATUS_LABELS,
 } from '@/lib/types'
 
+// actions = ปุ่มหลักที่เห็นเสมอ, more = ปุ่มรองที่บนมือถือพับไว้ใต้ เพิ่มเติม
 export function PageHeader({
   title,
   subtitle,
   backHref,
   actions,
+  more,
 }: {
   title: string
   subtitle?: string
   backHref?: string
   actions?: ReactNode
+  more?: ReactNode
 }) {
   return (
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -33,7 +37,12 @@ export function PageHeader({
         <h1 className="text-xl font-semibold leading-tight">{title}</h1>
         {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2 no-print">{actions}</div>}
+      {(actions || more) && (
+        <div className="flex w-full flex-wrap gap-2 no-print md:w-auto [&>a]:flex-1 [&>button]:flex-1 md:[&>a]:flex-none md:[&>button]:flex-none">
+          {actions}
+          {more && <HeaderMore>{more}</HeaderMore>}
+        </div>
+      )}
     </div>
   )
 }

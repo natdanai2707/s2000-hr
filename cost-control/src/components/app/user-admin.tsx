@@ -111,12 +111,12 @@ export function UserRowActions({
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <Select
           value={role}
           disabled={locked || pending}
           onChange={e => run(() => updateUserAccount(id, { role: e.target.value as UserRole }))}
-          className="h-9 w-auto"
+          className="col-span-2 sm:w-56"
           aria-label="สิทธิ์"
         >
           {(Object.keys(ROLE_LABELS) as UserRole[])
@@ -125,12 +125,11 @@ export function UserRowActions({
         </Select>
         {!locked && (
           <>
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => run(() => updateUserAccount(id, { is_active: !isActive }))}>
+            <Button variant={isActive ? 'outline' : 'default'} disabled={pending} onClick={() => run(() => updateUserAccount(id, { is_active: !isActive }))}>
               {isActive ? 'ปิดบัญชี' : 'เปิดบัญชี'}
             </Button>
             <Button
-              size="sm"
-              variant="ghost"
+              variant="outline"
               disabled={pending}
               onClick={async () => {
                 if (!confirm('ตั้งรหัสผ่านชั่วคราวใหม่ให้ผู้ใช้นี้ใช่หรือไม่ รหัสเดิมจะใช้ไม่ได้')) return

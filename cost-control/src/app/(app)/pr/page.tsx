@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { PageHeader, EmptyState, StatusBadge, Money } from '@/components/app/common'
 import { Button } from '@/components/ui/button'
 import { formatThaiDate } from '@/lib/date'
-import { PR_STATUS_LABELS, usesDirectPurchase, type PrStatus } from '@/lib/types'
+import { usesDirectPurchase, type PrStatus } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const FILTERS: { key: string; label: string; statuses: PrStatus[] }[] = [
@@ -38,7 +38,7 @@ export default async function PrListPage({ searchParams }: { searchParams: Promi
   return (
     <div>
       <PageHeader title={direct ? 'รายการสั่งซื้อ' : 'ใบขอซื้อ'} actions={<Button asChild><Link href="/pr/new">{newLabel}</Link></Button>} />
-      <div className="mb-3 flex flex-wrap gap-2 text-sm">
+      <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 text-sm md:mx-0 md:flex-wrap md:px-0 [&>a]:shrink-0 [&>a]:whitespace-nowrap">
         {FILTERS.map(x => (
           <Link key={x.key} href={`/pr?filter=${x.key}${mine === '1' ? '&mine=1' : ''}`} className={cn('rounded-full border px-3 py-1', x.key === f.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-card')}>
             {x.label}
@@ -58,9 +58,11 @@ export default async function PrListPage({ searchParams }: { searchParams: Promi
             return (
               <Link key={pr.id} href={`/pr/${pr.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40">
                 <div className="min-w-0">
-                  <div className="font-medium">{pr.pr_no} <span className="text-muted-foreground font-normal text-sm">· {proj?.name ?? ''}</span></div>
+                  <div className="font-medium">{pr.pr_no}</div>
+                  <div className="text-sm truncate">{proj?.name ?? ''}</div>
                   <div className="text-xs text-muted-foreground truncate">
-                    {by?.full_name ?? ''} · สร้าง {formatThaiDate(pr.created_at)} · ต้องการ {pr.needed_by_date ? formatThaiDate(pr.needed_by_date) : '-'}
+                    {by?.full_name ?? ''} · {formatThaiDate(pr.created_at)}
+                    {pr.needed_by_date && ` · ต้องการ ${formatThaiDate(pr.needed_by_date)}`}
                   </div>
                   {noFactor.has(pr.id) && pr.status !== 'cancelled' && <div className="text-xs text-warning-fg">ยังไม่ระบุตัวแปลงหน่วย</div>}
                 </div>
@@ -73,7 +75,6 @@ export default async function PrListPage({ searchParams }: { searchParams: Promi
           })}
         </div>
       )}
-      <p className="mt-3 text-xs text-muted-foreground">สถานะ: {Object.values(PR_STATUS_LABELS).join(' / ')}</p>
     </div>
   )
 }

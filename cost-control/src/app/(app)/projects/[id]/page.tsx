@@ -59,15 +59,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         title={s.name}
         subtitle={`${s.code} · ${branch?.name ?? ''}${s.customer_name ? ` · ${s.customer_name}` : ''}`}
         backHref="/projects"
-        actions={
+        actions={<Button asChild><Link href={`/pr/new?project=${id}`}>{direct ? 'บันทึกการสั่งซื้อ' : 'ขอซื้อ'}</Link></Button>}
+        more={
           <>
-            {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/edit`}>แก้ไขโครงการ</Link></Button>}
+            <Button asChild variant="outline"><Link href={`/expenses/new?project=${id}`}>บันทึกค่าใช้จ่าย</Link></Button>
             {canManage && s.confirmed_version_id && (
               <EditBoqButton projectId={id} confirmedVersionId={user.profile.role === 'management' || user.profile.role === 'admin' ? s.confirmed_version_id : null} />
             )}
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/boq/import`}>นำเข้า BOQ</Link></Button>}
-            <Button asChild variant="outline"><Link href={`/pr/new?project=${id}`}>{direct ? 'บันทึกการสั่งซื้อ' : 'ขอซื้อ'}</Link></Button>
-            <Button asChild variant="outline"><Link href={`/expenses/new?project=${id}`}>บันทึกค่าใช้จ่าย</Link></Button>
+            {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/edit`}>แก้ไขโครงการ</Link></Button>}
             {(user.profile.role === 'management' || user.profile.role === 'admin') && (
               <DeleteProjectButton projectId={id} projectCode={s.code} />
             )}
@@ -93,8 +93,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <Stat label="ผูกพันแล้ว (PO ยังไม่รับ)" value={formatBaht(s.committed)} />
         <Stat label="ต้นทุนจริง" value={formatBaht(s.actual)} sub={s.cost_pct === null ? undefined : `${formatPct(s.cost_pct)} ของงบ`} tone={toNumber(s.cost_pct) > 100 ? 'danger' : undefined} />
         <Stat label="ชำระแล้ว" value={formatBaht(s.paid)} />
-        <Stat label="ความก้าวหน้า" value={s.progress_pct === null ? 'ยังไม่เปิดใช้งาน' : formatPct(s.progress_pct)} sub="เฟส 2" />
-        <Stat label="ส่วนต่าง (ต้นทุน − ความก้าวหน้า)" value={s.cost_vs_progress === null ? '-' : formatPct(s.cost_vs_progress)} sub="เฟส 2" />
+        {/* ความก้าวหน้าเปิดใช้ในเฟส 2 ระหว่างนี้ไม่แสดงช่องว่าง */}
+        {s.progress_pct !== null && <Stat label="ความก้าวหน้า" value={formatPct(s.progress_pct)} />}
+        {s.cost_vs_progress !== null && <Stat label="ส่วนต่าง (ต้นทุน − ความก้าวหน้า)" value={formatPct(s.cost_vs_progress)} />}
         <Stat
           label="กำไรพยากรณ์"
           value={formatBaht(s.forecast_profit)}
@@ -166,7 +167,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 <div className="min-w-0">
                   <div className="font-medium">{pr.pr_no}</div>
                   <div className="text-xs text-muted-foreground">
-                    {(pr.profiles as unknown as { full_name: string } | null)?.full_name ?? ''} · ต้องการภายใน {pr.needed_by_date ? formatThaiDate(pr.needed_by_date) : '-'}
+                    {(pr.profiles as unknown as { full_name: string } | null)?.full_name ?? ''}
+                    {pr.submitted_at && ` · ${formatThaiDate(pr.submitted_at)}`}
+                    {pr.needed_by_date && ` · ต้องการภายใน ${formatThaiDate(pr.needed_by_date)}`}
                   </div>
                 </div>
                 <div className="text-right">
@@ -192,10 +195,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         />
       </section>
 
-      <section className="mb-6">
-        <h2 className="font-semibold mb-2">ปัญหาที่เปิดอยู่</h2>
-        <p className="text-sm text-muted-foreground">ยังไม่เปิดใช้งาน (เฟส 3)</p>
-      </section>
     </div>
   )
 }

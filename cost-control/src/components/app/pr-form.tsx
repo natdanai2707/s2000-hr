@@ -443,9 +443,16 @@ export function PrForm({
         )}
       </div>
 
-      <Button type="submit" size="lg" className="w-full" disabled={pending}>
-        {pending ? 'กำลังบันทึก' : !online ? 'บันทึกไว้ส่งเมื่อออนไลน์' : directMode ? 'บันทึกการสั่งซื้อ' : 'ส่งขออนุมัติ'}
-      </Button>
+      {/* มือถือ: ยอดรวมและปุ่มบันทึกติดอยู่เหนือเมนูล่าง ไม่ต้องเลื่อนลงไปหา */}
+      <div className="sticky bottom-[calc(3.6rem+env(safe-area-inset-bottom))] z-20 -mx-4 border-t border-border bg-background/95 px-4 py-2 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0">
+        <div className="mb-1.5 flex justify-between text-sm md:hidden">
+          <span className="text-muted-foreground">รวม {lines.length} รายการ (ไม่รวม VAT)</span>
+          <span className="tabular font-semibold">{formatBaht(routing.total)}</span>
+        </div>
+        <Button type="submit" size="lg" className="w-full" disabled={pending}>
+          {pending ? 'กำลังบันทึก' : !online ? 'บันทึกไว้ส่งเมื่อออนไลน์' : directMode ? 'บันทึกการสั่งซื้อ' : 'ส่งขออนุมัติ'}
+        </Button>
+      </div>
     </form>
   )
 }

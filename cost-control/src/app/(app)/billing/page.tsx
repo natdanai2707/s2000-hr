@@ -143,8 +143,8 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
             const recs = (receipts ?? []).filter(r => r.billing_id === row.id)
             return (
               <div key={row.id} className={cn('rounded-xl border border-border bg-card p-4 text-sm', voided && 'opacity-60')}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
                     <div className="font-medium">
                       {row.billing_no}
                       {row.installment && <span className="font-normal"> · {row.installment}</span>}
@@ -159,7 +159,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                       )}
                     </div>
                   </div>
-                  <div className="text-right tabular">
+                  <div className="shrink-0 text-right tabular">
                     <div className="font-medium">{formatBaht(total)}</div>
                     <div className="text-xs text-muted-foreground">ไม่รวม VAT {formatBaht(row.amount)}</div>
                     <div className={cn('text-xs font-medium', voided ? 'text-muted-foreground' : paidOff ? 'text-success-fg' : 'text-warning-fg')}>
@@ -193,7 +193,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                 )}
 
                 {canEdit && !voided && (
-                  <div className="mt-3 flex flex-wrap justify-end gap-1">
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
                     {!paidOff && <ReceiptDialog billing={row} retentionPct={projects.find(p => p.id === row.project_id)?.retention_pct ?? 0} />}
                     <BillingDialog projects={projects} billing={row} />
                     {recs.length === 0 && <VoidBillingButton id={row.id} billingNo={row.billing_no} />}

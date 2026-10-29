@@ -65,37 +65,50 @@ export function BoqCostTable({ items, sections }: { items: BoqItemCost[]; sectio
         </Table>
       </div>
 
-      {/* Mobile card list */}
-      <div className="md:hidden space-y-3">
-        {orderedSections.map(sec => (
-          <div key={sec.id ?? 'none'}>
-            <div className="text-xs font-medium text-muted-foreground px-1 mb-1">{sec.name}</div>
-            <div className="space-y-2">
-              {sortItems(bySection.get(sec.id) ?? []).map(it => {
-                const p = usedPct(it)
-                return (
-                  <div key={it.boq_item_id} className="rounded-xl border border-border bg-card p-3">
-                    <div className="flex justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium leading-tight">{it.item_no ? `${it.item_no} ` : ''}{it.description}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {BOQ_CATEGORY_LABELS[it.category]} · {formatQty(it.qty)} {it.unit ?? ''} · สั่งแล้ว {formatQty(it.qty_ordered)} รับแล้ว {formatQty(it.qty_received)}
-                        </div>
-                      </div>
-                      <div className={cn('text-sm tabular shrink-0', pctTone(p))}>{p === null ? '-' : formatPct(p, 0)}</div>
-                    </div>
-                    <div className="mt-2 grid grid-cols-4 gap-1 text-xs">
-                      <div><div className="text-muted-foreground">งบ</div><div className="tabular">{formatBaht(it.budget)}</div></div>
-                      <div><div className="text-muted-foreground">ผูกพัน</div><div className="tabular">{formatBaht(it.committed)}</div></div>
-                      <div><div className="text-muted-foreground">จริง</div><div className="tabular">{formatBaht(it.actual)}</div></div>
-                      <div><div className="text-muted-foreground">ชำระ</div><div className="tabular">{formatBaht(it.paid)}</div></div>
-                    </div>
+      {/* Mobile: แต่ละหมวดพับไว้ เห็นยอดรวมหมวดก่อน แตะเพื่อดูรายการ รายการเป็นแถวสั้น ใช้ไป/งบ และ % */}
+      <div className="md:hidden space-y-2">
+        {orderedSections.map(sec => {
+          const rows = sortItems(bySection.get(sec.id) ?? [])
+          const tot = rows.reduce((a, r) => ({ budget: a.budget + toNumber(r.budget), used: a.used + toNumber(r.actual) + toNumber(r.committed) }), { budget: 0, used: 0 })
+          const secPct = tot.budget > 0 ? (tot.used / tot.budget) * 100 : null
+          return (
+            <details key={sec.id ?? 'none'} className="group rounded-xl border border-border bg-card">
+              <summary className="flex cursor-pointer list-none items-center gap-3 p-3 [&::-webkit-details-marker]:hidden">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium leading-snug">{sec.name}</div>
+                  <div className="text-xs text-muted-foreground tabular">
+                    {rows.length} รายการ · ใช้ {formatBaht(tot.used)} / งบ {formatBaht(tot.budget)}
                   </div>
-                )
-              })}
-            </div>
-          </div>
-        ))}
+                  <UsedBar pct={secPct} />
+                </div>
+                <div className={cn('text-sm tabular shrink-0', pctTone(secPct))}>{secPct === null ? '-' : formatPct(secPct, 0)}</div>
+                <span className="text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
+              </summary>
+              <div className="divide-y divide-border border-t border-border">
+                {rows.map(it => {
+                  const p = usedPct(it)
+                  const used = toNumber(it.actual) + toNumber(it.committed)
+                  return (
+                    <div key={it.boq_item_id} className="px-3 py-2.5">
+                      <div className="flex justify-between gap-2">
+                        <div className="min-w-0 text-sm leading-snug">
+                          {it.item_no ? `${it.item_no} ` : ''}{it.description}
+                          <span className="text-xs text-muted-foreground"> · {BOQ_CATEGORY_LABELS[it.category]}</span>
+                        </div>
+                        <div className={cn('text-sm tabular shrink-0', pctTone(p))}>{p === null ? '-' : formatPct(p, 0)}</div>
+                      </div>
+                      <div className="mt-0.5 text-xs text-muted-foreground tabular">
+                        ใช้ {formatBaht(used)} / งบ {formatBaht(it.budget)} · {formatQty(it.qty_ordered)}/{formatQty(it.qty)} {it.unit ?? ''}
+                        {toNumber(it.paid) > 0 && ` · ชำระ ${formatBaht(it.paid)}`}
+                      </div>
+                      {used > 0 && <UsedBar pct={p} />}
+                    </div>
+                  )
+                })}
+              </div>
+            </details>
+          )
+        })}
       </div>
     </>
   )
@@ -132,5 +145,17 @@ function RowsGroup({ name, rows, tot, secPct }: { name: string; rows: BoqItemCos
         )
       })}
     </>
+  )
+}
+
+function UsedBar({ pct }: { pct: number | null }) {
+  if (pct === null) return null
+  return (
+    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        className={cn('h-full rounded-full', pct > 100 ? 'bg-status-alert' : pct > 90 ? 'bg-status-watch' : 'bg-status-normal')}
+        style={{ width: `${Math.min(pct, 100)}%` }}
+      />
+    </div>
   )
 }

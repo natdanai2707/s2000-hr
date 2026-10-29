@@ -22,13 +22,13 @@ export default async function ProjectsPage() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {projects.map(p => (
-            <Link key={p.id} href={`/projects/${p.id}`} className="rounded-xl border border-border bg-card p-4 hover:bg-muted/40">
+            <Link key={p.id} href={`/projects/${p.id}`} className="min-w-0 rounded-xl border border-border bg-card p-4 hover:bg-muted/40">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-xs text-muted-foreground">
                     {p.code} · {(p.branches as unknown as { name: string } | null)?.name ?? ''}
                   </div>
-                  <div className="font-semibold truncate">{p.name}</div>
+                  <div className="font-semibold leading-snug line-clamp-2">{p.name}</div>
                   {p.customer_name && <div className="text-sm text-muted-foreground truncate">{p.customer_name}</div>}
                 </div>
                 <StatusBadge kind="project" status={p.status} />

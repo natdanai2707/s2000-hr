@@ -50,24 +50,29 @@ export default async function BoqVersionPage({ params }: { params: Promise<{ id:
   const profit = totalSell - totalCost
   const profitPct = totalSell > 0 ? (profit / totalSell) * 100 : null
 
+  // ร่างที่รอยืนยัน ปุ่มยืนยันต้องเห็นทันที ที่เหลือ (ยกเลิกการยืนยัน สร้าง VO ลบ) พับไว้ใต้ เพิ่มเติม บนมือถือ
+  const draftToConfirm = isManagement && version.status === 'draft'
+  const versionActions = (
+    <BoqVersionActions
+      projectId={id}
+      versionId={versionId}
+      status={version.status}
+      canConfirm={isManagement && version.status === 'draft'}
+      canUnconfirm={isManagement && version.status === 'confirmed'}
+      canDelete={isManagement || user.profile.role === 'admin'}
+      canCreateVo={version.status === 'confirmed' && (isManagement || canEditRole(user.profile.role))}
+      hasItems={(items?.length ?? 0) > 0}
+    />
+  )
+
   return (
     <div>
       <PageHeader
         title={`BOQ เวอร์ชัน ${version.version_no} · ${BOQ_VERSION_TYPE_LABELS[version.type as keyof typeof BOQ_VERSION_TYPE_LABELS]}`}
         subtitle={`${project?.code ?? ''} ${project?.name ?? ''}`}
         backHref={`/projects/${id}`}
-        actions={
-          <BoqVersionActions
-            projectId={id}
-            versionId={versionId}
-            status={version.status}
-            canConfirm={isManagement && version.status === 'draft'}
-            canUnconfirm={isManagement && version.status === 'confirmed'}
-            canDelete={isManagement || user.profile.role === 'admin'}
-            canCreateVo={version.status === 'confirmed' && (isManagement || canEditRole(user.profile.role))}
-            hasItems={(items?.length ?? 0) > 0}
-          />
-        }
+        actions={draftToConfirm ? versionActions : undefined}
+        more={draftToConfirm ? undefined : versionActions}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
