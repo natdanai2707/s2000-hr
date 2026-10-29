@@ -46,6 +46,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
       supabase.from('branches').select('name').eq('id', s.branch_id).maybeSingle(),
     ])
+  const { data: receivable } = await supabase.from('v_project_receivables').select('*').eq('project_id', id).maybeSingle()
+  const financeRole = ['accounting', 'management', 'admin'].includes(user.profile.role)
 
   const canManage = user.profile.role === 'management' || user.profile.role === 'admin' || (user.profile.role === 'project_manager' && (members ?? []).some(m => m.user_id === user.id))
   const tone = statusTone(s)
@@ -100,6 +102,25 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           tone={toNumber(s.forecast_profit) < toNumber(s.expected_profit) ? 'danger' : 'success'}
         />
       </div>
+
+      {receivable && (financeRole || toNumber(receivable.billed_total) > 0) && (
+        <section className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold">รายรับ</h2>
+            {financeRole && <Link href={`/billing?filter=all&project=${id}`} className="text-sm underline">วางบิลและรับเงิน</Link>}
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Stat
+              label="วางบิลแล้ว (ไม่รวม VAT)"
+              value={formatBaht(receivable.billed_excl_vat)}
+              sub={receivable.billed_pct === null ? undefined : `${formatPct(toNumber(receivable.billed_pct))} ของมูลค่าสัญญา`}
+            />
+            <Stat label="เงินเข้าจริง" value={formatBaht(receivable.cash_received)} sub={`ต้นทุนจริง ${formatBaht(s.actual)}`} />
+            <Stat label="ค้างรับ (รวม VAT)" value={formatBaht(receivable.outstanding)} tone={toNumber(receivable.outstanding) > 0 ? 'warning' : undefined} />
+            <Stat label="เงินประกันผลงานที่ลูกค้าถือไว้" value={formatBaht(receivable.retention_held)} />
+          </div>
+        </section>
+      )}
 
       <section className="mb-6">
         <div className="flex items-center justify-between mb-2">

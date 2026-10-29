@@ -625,4 +625,46 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     expect(mine).toEqual(['ทดสอบ'])
     await expect(runAs(client, engA, q => q(`insert into public.notifications (user_id, event, title) values ($1, 'x', 'spam')`, [engB]))).rejects.toThrow(/row-level security/)
   })
+
+  it('วางบิลและรับเงินจากลูกค้า: บัญชีและฝ่ายบริหารบันทึกได้ ยอดค้างรับและ % วางบิลถูก', async () => {
+    // วิศวกรวางบิลไม่ได้ แต่เห็นได้ถ้าเป็นสมาชิกโครงการ
+    await expect(runAs(client, engA, q => q(`insert into public.customer_billings (project_id, billing_no, billed_date, amount, vat_amount) values ($1, 'X', current_date, 1, 0)`, [projectA]))).rejects.toThrow(/row-level security/)
+
+    const bill = await runAs(client, accounting, async q =>
+      (await q(`insert into public.customer_billings (project_id, billing_no, installment, billed_date, amount, vat_amount, created_by)
+                values ($1, public.next_document_no('BL'), 'งวดที่ 1', current_date, 300000, 21000, $2) returning id`, [projectA, accounting])).rows[0].id as string)
+
+    // ลูกค้าจ่ายครั้งแรก หัก ณ ที่จ่าย 3% และเงินประกันผลงาน 5% ของยอดก่อน VAT
+    await runAs(client, accounting, q => q(`insert into public.customer_receipts (project_id, billing_id, received_date, amount_received, withholding_tax, retention)
+                                            values ($1, $2, current_date, 297000, 9000, 15000)`, [projectB, bill]))
+    // ทริกเกอร์แก้ project_id ให้ตรงกับบิล
+    expect((await client.query(`select project_id from public.customer_receipts where billing_id = $1`, [bill])).rows[0].project_id).toBe(projectA)
+
+    let st = (await client.query(`select settled, outstanding from public.v_customer_billing_status where billing_id = $1`, [bill])).rows[0]
+    expect(n(st.settled)).toBe(321000)
+    expect(n(st.outstanding)).toBe(0)
+
+    const bill2 = await runAs(client, mgmt, async q =>
+      (await q(`insert into public.customer_billings (project_id, billing_no, billed_date, amount, vat_amount) values ($1, 'BL-T2', current_date, 100000, 7000) returning id`, [projectA])).rows[0].id as string)
+    await runAs(client, mgmt, q => q(`insert into public.customer_receipts (project_id, billing_id, received_date, amount_received) values ($1, $2, current_date, 50000)`, [projectA, bill2]))
+    st = (await client.query(`select outstanding from public.v_customer_billing_status where billing_id = $1`, [bill2])).rows[0]
+    expect(n(st.outstanding)).toBe(57000)
+
+    // ยกเลิกบิลที่รับเงินแล้วไม่ได้
+    await expect(runAs(client, mgmt, q => q(`update public.customer_billings set voided_at = now() where id = $1`, [bill2]))).rejects.toThrow(/รับเงินแล้ว/)
+
+    // ลูกค้าคืนเงินประกันผลงาน 15,000 ไม่ผูกบิล
+    await runAs(client, accounting, q => q(`insert into public.customer_receipts (project_id, received_date, amount_received, is_retention_release) values ($1, current_date, 15000, true)`, [projectA]))
+
+    const pr = (await runAs(client, engA, async q => (await q(`select * from public.v_project_receivables where project_id = $1`, [projectA])).rows[0]))
+    expect(n(pr.billed_excl_vat)).toBe(400000)
+    expect(n(pr.billed_pct)).toBe(40) // มูลค่าสัญญา 1,000,000
+    expect(n(pr.cash_received)).toBe(297000 + 50000 + 15000)
+    expect(n(pr.outstanding)).toBe(57000)
+    expect(n(pr.retention_held)).toBe(0)
+    expect(n(pr.withholding_tax)).toBe(9000)
+
+    // วิศวกรที่ไม่ได้อยู่ในโครงการไม่เห็นบิล
+    expect((await runAs(client, engB, async q => (await q(`select id from public.customer_billings`)).rows)).length).toBe(0)
+  })
 })

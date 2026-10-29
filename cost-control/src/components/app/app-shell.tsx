@@ -71,6 +71,9 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
           <Link href="/notifications" className="block px-2 py-2 text-sm hover:bg-muted rounded-md">
             แจ้งเตือน{unreadCount > 0 ? ` (${unreadCount})` : ''}
           </Link>
+          <Link href="/account" className="block px-2 py-2 text-sm hover:bg-muted rounded-md">
+            เปลี่ยนรหัสผ่าน
+          </Link>
           <button onClick={signOut} className="w-full text-left px-2 py-2 text-sm hover:bg-muted rounded-md">
             ออกจากระบบ
           </button>
@@ -130,6 +133,9 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
             ))}
             <Link href="/notifications" onClick={() => setMoreOpen(false)} className="block px-5 py-3 text-sm border-b border-border">
               แจ้งเตือน
+            </Link>
+            <Link href="/account" onClick={() => setMoreOpen(false)} className="block px-5 py-3 text-sm border-b border-border">
+              เปลี่ยนรหัสผ่าน
             </Link>
             <button onClick={signOut} className="block w-full text-left px-5 py-3 text-sm">
               ออกจากระบบ

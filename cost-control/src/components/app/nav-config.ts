@@ -19,12 +19,13 @@ export const SIDEBAR_ITEMS: NavItem[] = [
   { href: '/po', label: 'ใบสั่งซื้อ', pausedInDirectMode: true },
   { href: '/receiving', label: 'รับของ', pausedInDirectMode: true },
   { href: '/finance', label: 'การรับของและชำระเงิน', directLabel: 'ใบแจ้งหนี้และชำระเงิน' },
+  { href: '/billing', label: 'วางบิลและรับเงิน', roles: ['accounting', 'management', 'admin'] },
   { href: '/schedule', label: 'แผนงาน', phase: 2 },
   { href: '/progress', label: 'ความก้าวหน้า', phase: 2 },
   { href: '/closeout', label: 'ปิดโครงการ', phase: 3 },
   { href: '/issues', label: 'บันทึกปัญหา', phase: 3 },
   { href: '/prices', label: 'ฐานราคาวัสดุ', phase: 3 },
-  { href: '/admin/users', label: 'ผู้ใช้และสิทธิ์', roles: ['admin'], phase: 3 },
+  { href: '/admin/users', label: 'ผู้ใช้และสิทธิ์', roles: ['management', 'admin'] },
   { href: '/settings', label: 'ตั้งค่า', roles: ['management'], phase: 3 },
 ]
 
