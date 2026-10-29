@@ -17,6 +17,17 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   admin: 'ผู้ดูแลระบบ',
 }
 
+// สิทธิ์แต่ละแบบทำอะไรได้ แสดงตอนเลือก ให้ผู้เพิ่มผู้ใช้เลือกถูก
+export const ROLE_HINTS: Record<UserRole, string> = {
+  management: 'ใช้งานและแก้ไขได้ทุกฟีเจอร์ เห็นทุกโครงการ',
+  admin: 'เหมือนฝ่ายบริหาร และจัดการบัญชีผู้ดูแลระบบได้',
+  accounting: 'วางบิลและรับเงิน ใบแจ้งหนี้และการชำระเงิน เห็นทุกโครงการ',
+  purchasing: 'ออกใบสั่งซื้อ เห็นทุกโครงการ',
+  project_manager: 'จัดการโครงการที่เป็นสมาชิก อนุมัติใบขอซื้อ',
+  engineer: 'ขอซื้อและบันทึกค่าใช้จ่ายในโครงการที่เป็นสมาชิก',
+  site_supervisor: 'รับของและบันทึกหน้างานในโครงการที่เป็นสมาชิก',
+}
+
 export type ProjectStatus = 'draft' | 'active' | 'closing' | 'closed'
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   draft: 'ร่าง',
