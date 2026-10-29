@@ -23,6 +23,11 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + '/')
 }
 
+// เมนูล่างไฮไลต์อันที่ตรงที่สุดอันเดียว /pr/new ต้องไม่ไฮไลต์ทั้ง บันทึกซื้อ และ รายการซื้อ
+function bestMatch(pathname: string, hrefs: string[]) {
+  return hrefs.filter(h => isActive(pathname, h)).sort((a, b) => b.length - a.length)[0] ?? null
+}
+
 export function AppShell({ profile, pendingCount, unreadCount, directMode, children }: Props) {
   const pathname = usePathname()
   const router = useRouter()
@@ -38,6 +43,7 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
   }
 
   const bottomItems = visibleFor(BOTTOM_ITEMS, profile.role, directMode).map(item => ({ ...item, count: item.href === '/approvals' ? pendingCount : 0 }))
+  const activeBottom = bestMatch(pathname, bottomItems.map(i => i.href))
 
   return (
     <div className="min-h-screen md:flex">
@@ -102,8 +108,8 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center justify-center min-h-14 text-xs',
-                isActive(pathname, item.href) ? 'text-primary font-medium' : 'text-muted-foreground'
+                'flex flex-col items-center justify-center min-h-14 px-0.5 text-[13px] leading-tight text-center border-t-2',
+                activeBottom === item.href ? 'text-primary font-semibold border-primary' : 'text-muted-foreground border-transparent'
               )}
             >
               <span>{item.label}</span>
@@ -112,21 +118,23 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
           ))}
           <button
             onClick={() => setMoreOpen(v => !v)}
-            className={cn('flex flex-col items-center justify-center min-h-14 text-xs', moreOpen ? 'text-primary font-medium' : 'text-muted-foreground')}
+            className={cn('flex flex-col items-center justify-center min-h-14 text-[13px] border-t-2', moreOpen ? 'text-primary font-semibold border-primary' : 'text-muted-foreground border-transparent')}
           >
             เพิ่มเติม
           </button>
         </div>
+        {moreOpen && <div className="fixed inset-0 -z-10 bg-black/30" onClick={() => setMoreOpen(false)} aria-hidden="true" />}
         {moreOpen && (
-          <div className="absolute bottom-full inset-x-0 bg-card border-t border-border max-h-[60vh] overflow-y-auto">
-            {sidebar.map(item => paused(item) ? (
+          <div className="absolute bottom-full inset-x-0 bg-card border-t border-border max-h-[70vh] overflow-y-auto rounded-t-xl shadow-lg">
+            {/* เมนูที่ยังไม่เปิดใช้งาน (เฟส 2-3) ไม่แสดงบนมือถือ */}
+            {sidebar.filter(item => !item.phase).map(item => paused(item) ? (
               <PausedItem key={item.href} label={item.label} className="px-5 py-3 border-b border-border" />
             ) : (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setMoreOpen(false)}
-                className={cn('block px-5 py-3 text-sm border-b border-border', item.phase && 'text-muted-foreground')}
+                className={cn('block px-5 py-3.5 text-[15px] border-b border-border', isActive(pathname, item.href) && 'font-semibold text-primary')}
               >
                 {item.label}
               </Link>

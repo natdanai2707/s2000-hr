@@ -168,7 +168,7 @@ export function ReceiptDialog({
 
   return (
     <>
-      <Button size="sm" variant={receipt ? 'ghost' : linked ? 'outline' : 'outline'} onClick={() => setOpen(true)}>
+      <Button size={receipt || linked ? 'sm' : 'default'} variant={receipt ? 'ghost' : 'outline'} onClick={() => setOpen(true)}>
         {receipt ? 'แก้ไข' : linked ? 'รับเงิน' : 'บันทึกเงินเข้าอื่น'}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
