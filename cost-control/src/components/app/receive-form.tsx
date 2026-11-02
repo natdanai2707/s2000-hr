@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import { formatBaht, formatQty } from '@/lib/format'
+import { useErrorToast } from './toast'
 
 interface Item {
   po_item_id: string
@@ -27,6 +28,7 @@ export function ReceiveForm({ poId, items }: { poId: string; items: Item[] }) {
   const [costs, setCosts] = useState<Record<string, string>>(Object.fromEntries(items.map(i => [i.po_item_id, String(i.unit_price)])))
   const [source, setSource] = useState<'supplier' | 'internal_stock'>('supplier')
   const [error, setError] = useState<string | null>(null)
+  useErrorToast(error)
   const [pending, setPending] = useState(false)
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {

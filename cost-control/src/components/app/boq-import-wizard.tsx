@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
+import { useErrorToast } from './toast'
 
 
 const COLUMN_KEYS: BoqColumnKey[] = [
@@ -29,6 +30,7 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentC
   const [include, setInclude] = useState<Record<string, boolean>>({})
   const [edited, setEdited] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<string | null>(null)
+  useErrorToast(error)
   const [pending, setPending] = useState(false)
   // มูลค่าสัญญาที่อ่านได้จากไฟล์ ผู้ใช้แก้ได้ ถ้ายังไม่แก้จะตามชีตที่เลือกนำเข้า
   const [contractText, setContractText] = useState<string | null>(null)

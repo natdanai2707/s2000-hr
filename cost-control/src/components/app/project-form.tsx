@@ -11,10 +11,12 @@ import { FormField } from './common'
 import type { Branch, Project, ProjectStatus } from '@/lib/types'
 import { PROJECT_STATUS_LABELS } from '@/lib/types'
 import { DateInput } from './date-input'
+import { useErrorToast } from './toast'
 
 export function ProjectForm({ branches, project }: { branches: Branch[]; project?: Project }) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
+  useErrorToast(error)
   const [pending, setPending] = useState(false)
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {

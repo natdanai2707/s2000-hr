@@ -10,6 +10,7 @@ import { VatPriceInput } from './vat-price-input'
 import { SupplierCombobox, type SupplierValue } from './supplier-combobox'
 import { addVat } from '@/lib/vat'
 import { formatBaht, formatQty } from '@/lib/format'
+import { useErrorToast } from './toast'
 
 interface Item {
   id: string
@@ -25,6 +26,7 @@ export function PoCreateForm({ prId, items, suppliers, defaultSupplier, threshol
   const [supplier, setSupplier] = useState<SupplierValue>(defaultSupplier)
   const [prices, setPrices] = useState<Record<string, string>>(Object.fromEntries(items.map(i => [i.id, String(i.unit_price)])))
   const [error, setError] = useState<string | null>(null)
+  useErrorToast(error)
   const [info, setInfo] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
