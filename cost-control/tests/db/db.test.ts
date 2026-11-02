@@ -682,4 +682,14 @@ describe.skipIf(!TEST_DATABASE_URL)('database: migrations, RLS, views, functions
     await client.query(`update public.profiles set is_active = true, role = 'accounting' where id = $1`, [self])
     expect((await client.query(`select role from public.profiles where id = $1`, [self])).rows[0].role).toBe('accounting')
   })
+
+  it('ฝ่ายบริหารที่ไม่ได้เป็นสมาชิกโครงการ บันทึกการสั่งซื้อได้ วิศวกรนอกโครงการยังทำไม่ได้', async () => {
+    const boss = await createUser(client, 'boss2@test', 'ฝ่ายบริหารคนที่สอง', 'management')
+    const id = await runAs(client, boss, async q =>
+      (await q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values (public.next_document_no('PR'), $1, $2, 'draft', $2) returning id`, [projectA, boss])).rows[0].id)
+    expect(id).toBeTruthy()
+    await expect(runAs(client, engB, q => q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values ('X-1', $1, $2, 'draft', $2)`, [projectA, engB]))).rejects.toThrow(/row-level security/)
+    // ผู้ขอต้องเป็นตัวเองเสมอ
+    await expect(runAs(client, boss, q => q(`insert into public.purchase_requests (pr_no, project_id, requested_by, status, created_by) values ('X-2', $1, $2, 'draft', $2)`, [projectA, engA]))).rejects.toThrow(/row-level security/)
+  })
 })

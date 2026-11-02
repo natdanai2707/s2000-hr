@@ -55,12 +55,14 @@ interface Line {
   buy_unit: string
   factor: string
   // มาจากเอกสารที่ Claude อ่าน แสดงให้ผู้ใช้เทียบตอนเลือกรายการ BOQ
-  doc_text: string
+  doc_desc: string // ชื่อสินค้าตามเอกสาร ใช้เป็นหัวการ์ดเมื่อยังไม่ได้เลือก BOQ หรือเป็นของนอก BOQ
   doc_note: string
+  // null = ให้ระบบเลือก: รายการที่ต้องแก้กางไว้ รายการที่เรียบร้อยพับไว้ ผู้ใช้กดหัวการ์ดเพื่อเปิดปิดเอง
+  open: boolean | null
 }
 
 function newLine(): Line {
-  return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '', buy_other: false, buy_unit: '', factor: '', doc_text: '', doc_note: '' }
+  return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '', buy_other: false, buy_unit: '', factor: '', doc_desc: '', doc_note: '', open: true }
 }
 
 // null = ซื้อเป็นหน่วยอื่นแต่ยังไม่ระบุตัวแปลง (ผู้ใช้เว้นว่างได้) NaN = กรอกค่าที่ใช้ไม่ได้
@@ -93,8 +95,9 @@ function linesFromDocument(r: PurchaseDocumentResult, items: PrFormItem[], suppl
       buy_other: !!item && differ,
       buy_unit: differ ? rl.unit ?? '' : '',
       factor: differ && rl.qty_factor ? String(rl.qty_factor) : '',
-      doc_text: `${rl.description}${rl.qty !== null ? ` · ${rl.qty} ${rl.unit ?? ''}` : ''}`,
+      doc_desc: rl.description,
       doc_note: rl.note ?? '',
+      open: null,
     }
   })
 }
@@ -102,6 +105,33 @@ function linesFromDocument(r: PurchaseDocumentResult, items: PrFormItem[], suppl
 function documentNote(r: PurchaseDocumentResult): string {
   const ref = [r.document_no && `เลขที่ ${r.document_no}`, r.document_date && `วันที่ ${formatThaiDate(r.document_date)}`].filter(Boolean).join(' ')
   return ref ? `จากเอกสาร ${ref}` : ''
+}
+
+type Tone = 'ok' | 'warn' | 'danger' | 'idle'
+const TONE_BORDER: Record<Tone, string> = { ok: 'border-l-status-normal', warn: 'border-l-status-watch', danger: 'border-l-status-alert', idle: 'border-l-border' }
+const CHIP: Record<Tone, string> = {
+  ok: 'bg-success-bg text-success-fg',
+  warn: 'bg-warning-bg text-warning-fg',
+  danger: 'bg-danger-bg text-danger-fg',
+  idle: 'bg-muted text-muted-foreground',
+}
+
+// สถานะของบรรทัดสำหรับหัวการ์ด: ป้ายสั้นๆ สีตามความรุนแรง และต้องให้ผู้ใช้แก้หรือไม่ (กางการ์ดไว้ให้)
+function lineStatus({ item, ev, line, unitsUnknown }: { item: PrFormItem | null; ev: ReturnType<typeof evaluateLine> | null; line: Line; unitsUnknown: boolean }) {
+  const chips: { text: string; tone: Tone }[] = []
+  if (!item) return { tone: 'warn' as Tone, attention: true, chips: [{ text: 'เลือกรายการ BOQ', tone: 'warn' as Tone }] }
+  const missing = line.qty === '' || line.unit_price === '' || !(Number(line.qty) > 0)
+  if (missing) chips.push({ text: 'กรอกปริมาณและราคา', tone: 'warn' })
+  if (item.is_off_boq) chips.push({ text: 'นอก BOQ', tone: 'warn' })
+  if (ev?.qtyOverBoq) chips.push({ text: 'เกิน BOQ', tone: 'danger' })
+  if (ev?.priceOverThreshold) chips.push({ text: `แพงกว่าต้นทุน${ev.priceDiffPct !== null ? ` ${formatPct(ev.priceDiffPct)}` : ''}`, tone: 'danger' })
+  else if (ev && !item.is_off_boq && !unitsUnknown && ev.priceDiff > 0 && !missing) chips.push({ text: 'แพงกว่าต้นทุนเล็กน้อย', tone: 'warn' })
+  if (unitsUnknown) chips.push({ text: 'ยังไม่ระบุตัวแปลงหน่วย', tone: 'idle' })
+  const needReason = !!ev?.requiresReason && !line.variance_reason.trim()
+  if (needReason) chips.push({ text: 'ต้องใส่เหตุผล', tone: 'danger' })
+  if (chips.length === 0) chips.push({ text: ev?.priceBelow ? 'ถูกกว่าต้นทุน' : 'ตรงงบ', tone: 'ok' })
+  const tone: Tone = chips.some(c => c.tone === 'danger') ? 'danger' : chips.some(c => c.tone === 'warn') ? 'warn' : 'ok'
+  return { tone, attention: missing || needReason, chips }
 }
 
 function round2(n: number): number {
@@ -154,6 +184,7 @@ export function PrForm({
     const input = { qty: boq.qty, unitPrice: boq.unitPrice, boqQty: item.qty, boqUnitCost: item.unit_cost, qtyOrdered: item.qty_ordered, isOffBoq: item.is_off_boq, varianceReason: l.variance_reason, unitsUnknown }
     return { line: l, item, ev: evaluateLine(input, settings), boq, input, unitsUnknown }
   })
+  const attentionCount = evaluated.filter(e => lineStatus({ item: e.item, ev: e.ev, line: e.line, unitsUnknown: e.unitsUnknown }).attention).length
   const routing = routePurchaseRequest(
     evaluated.filter(e => e.item).map(e => e.input!),
     settings
@@ -182,8 +213,9 @@ export function PrForm({
     })
   }
 
+  // แก้ช่องใดในการ์ดที่ระบบกางไว้ให้ ตรึงให้กางอยู่ ไม่ให้การ์ดพับเองกลางคันเมื่อสถานะกลายเป็นเรียบร้อย
   function update(key: string, patch: Partial<Line>) {
-    setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l)))
+    setLines(ls => ls.map(l => (l.key === key ? { ...l, ...('open' in patch ? {} : { open: l.open ?? true }), ...patch } : l)))
   }
 
   function buildPayload(): QueuedPrPayload | string {
@@ -268,20 +300,65 @@ export function PrForm({
         </FormField>
       </div>
 
+      {lines.length > 2 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            {lines.length} รายการ{attentionCount > 0 && <span className="text-danger-fg font-medium"> · ต้องแก้ {attentionCount}</span>}
+          </span>
+          <span className="flex gap-1">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setLines(ls => ls.map(l => ({ ...l, open: true })))}>กางทั้งหมด</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setLines(ls => ls.map(l => ({ ...l, open: null })))}>พับที่เรียบร้อย</Button>
+          </span>
+        </div>
+      )}
+
       {evaluated.map(({ line, item, ev, boq, unitsUnknown }, idx) => {
         const q = line.search.trim().toLowerCase()
         const matches = q && !item ? items.filter(i => `${i.item_no ?? ''} ${i.description} ${i.unit ?? ''}`.toLowerCase().includes(q)).slice(0, 12) : []
+        const status = lineStatus({ item, ev, line, unitsUnknown })
+        const expanded = line.open ?? status.attention
+        const unitLabel = line.buy_other && line.buy_unit ? line.buy_unit : item?.unit ?? ''
         return (
-          <div key={line.key} className="rounded-xl border border-border bg-card p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="font-medium text-sm">รายการที่ {idx + 1}</div>
-              {lines.length > 1 && <Button type="button" size="sm" variant="ghost" onClick={() => setLines(ls => ls.filter(l => l.key !== line.key))}>ลบ</Button>}
-            </div>
+          <div key={line.key} className={cn('rounded-xl border border-border border-l-4 bg-card shadow-sm', TONE_BORDER[status.tone])}>
+            {/* หัวการ์ด: เห็นรายการ ยอดเงิน และสถานะในบรรทัดเดียว แตะเพื่อเปิดปิด */}
+            <button
+              type="button"
+              onClick={() => update(line.key, { open: !expanded })}
+              aria-expanded={expanded}
+              className="flex w-full items-start gap-3 p-3 text-left md:p-4"
+            >
+              <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">{idx + 1}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-medium leading-snug">
+                  {item && !item.is_off_boq ? `${item.item_no ? `${item.item_no} ` : ''}${item.description}` : line.doc_desc || item?.description || 'รายการใหม่'}
+                </span>
+                {item && !item.is_off_boq && line.doc_desc && (
+                  <span className="block text-xs text-muted-foreground leading-snug">ในเอกสาร: {line.doc_desc}</span>
+                )}
+                <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                  {line.qty !== '' && line.unit_price !== '' && (
+                    <span className="tabular text-muted-foreground">
+                      {formatQty(Number(line.qty))} {unitLabel} × {formatBaht(Number(line.unit_price))}
+                    </span>
+                  )}
+                  {status.chips.map(c => (
+                    <span key={c.text} className={cn('rounded-full px-2 py-0.5 font-medium', CHIP[c.tone])}>{c.text}</span>
+                  ))}
+                </span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span className="block tabular font-semibold">{ev ? formatBaht(ev.amount) : '-'}</span>
+                <span className={cn('mt-1 inline-block text-muted-foreground transition-transform', expanded && 'rotate-180')} aria-hidden="true">▾</span>
+              </span>
+            </button>
 
-            {line.doc_text && (
+            {expanded && (
+            <div className="space-y-4 rounded-b-xl border-t border-border bg-muted/20 p-3 md:p-4">
+
+            {/* ชื่อและปริมาณตามเอกสารอยู่ที่หัวการ์ดแล้ว ตรงนี้แสดงเฉพาะข้อสังเกตจากการอ่าน */}
+            {line.doc_note && (
               <div className="rounded-lg bg-muted/60 px-3 py-2 text-xs">
-                <div><span className="text-muted-foreground">จากเอกสาร: </span>{line.doc_text}</div>
-                {line.doc_note && <div className="text-muted-foreground mt-0.5">{line.doc_note}</div>}
+                <span className="text-muted-foreground">ข้อสังเกตจากเอกสาร: </span>{line.doc_note}
               </div>
             )}
             <FormField label="รายการ BOQ" hint={!item ? 'พิมพ์ลำดับหรือชื่อรายการเพื่อค้นหา' : undefined}>
@@ -411,6 +488,15 @@ export function PrForm({
                 onChange={v => update(line.key, { supplier_id: v.id, supplier_name: v.name })}
               />
             </FormField>
+
+            <div className="flex justify-between gap-2 border-t border-border pt-3">
+              {lines.length > 1 ? (
+                <Button type="button" size="sm" variant="ghost" className="text-danger-fg" onClick={() => setLines(ls => ls.filter(l => l.key !== line.key))}>ลบรายการนี้</Button>
+              ) : <span />}
+              <Button type="button" size="sm" variant="outline" onClick={() => update(line.key, { open: false })}>พับ</Button>
+            </div>
+            </div>
+            )}
           </div>
         )
       })}
