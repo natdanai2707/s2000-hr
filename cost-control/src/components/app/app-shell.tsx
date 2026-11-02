@@ -9,6 +9,7 @@ import { SIDEBAR_ITEMS, BOTTOM_ITEMS, visibleFor, type NavItem } from './nav-con
 import { createClient } from '@/lib/supabase/client'
 import { OfflineSync } from './offline-sync'
 import { ServiceWorkerRegister } from './sw-register'
+import { ToastProvider } from './toast'
 
 interface Props {
   profile: Profile
@@ -97,7 +98,9 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
       </header>
 
       <main className="flex-1 md:ml-60 pb-20 md:pb-8">
-        <div className="mx-auto max-w-6xl px-4 py-4 md:px-8 md:py-6">{children}</div>
+        <div className="mx-auto max-w-6xl px-4 py-4 md:px-8 md:py-6">
+          <ToastProvider>{children}</ToastProvider>
+        </div>
       </main>
 
       {/* Mobile bottom navigation */}

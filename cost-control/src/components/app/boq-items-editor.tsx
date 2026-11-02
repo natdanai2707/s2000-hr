@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { FormField } from './common'
 import { VatPriceInput } from './vat-price-input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useErrorToast } from './toast'
 
 export interface EditableItem {
   id: string
@@ -46,6 +47,7 @@ export function BoqItemsEditor({
   const router = useRouter()
   const [editing, setEditing] = useState<EditableItem | null | 'new'>(null)
   const [error, setError] = useState<string | null>(null)
+  useErrorToast(error)
   const [pending, setPending] = useState(false)
   const secName = (id: string | null) => sections.find(s => s.id === id)?.name ?? 'ไม่ระบุหมวด'
 

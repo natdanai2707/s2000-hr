@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useOnline } from '@/lib/hooks/use-online'
 import { useRouter } from 'next/navigation'
 import { submitPurchaseRequest, type PrLinePayload, type QueuedPrPayload } from '@/actions/purchase-requests'
@@ -22,6 +22,7 @@ import { suggestConversion, toBoqUnits } from '@/lib/units'
 import { SupplierCombobox } from './supplier-combobox'
 import { addVat } from '@/lib/vat'
 import { cn } from '@/lib/utils'
+import { useToast } from './toast'
 
 export interface PrFormItem {
   id: string
@@ -170,6 +171,21 @@ export function PrForm({
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null)
   const [attachmentPath, setAttachmentPath] = useState<string | null>(initialDocument?.attachment_path ?? null)
   const online = useOnline()
+  const toast = useToast()
+  const formRef = useRef<HTMLFormElement>(null)
+
+  // ข้อผิดพลาดเด้งที่มุมขวาล่าง ไม่ต้องเลื่อนขึ้นไปดูหัวฟอร์ม ถ้าเป็นของรายการใด กางการ์ดและมีปุ่มพาไปที่รายการนั้น
+  function goToLine(key: string) {
+    setLines(ls => ls.map(l => (l.key === key ? { ...l, open: true } : l)))
+    // id ของการ์ดใช้ลำดับ ไม่ใช้ key ที่สุ่ม เพราะ key ฝั่งเซิร์ฟเวอร์กับเบราว์เซอร์ไม่ตรงกัน
+    const idx = lines.findIndex(l => l.key === key)
+    requestAnimationFrame(() => formRef.current?.querySelector(`#pr-line-${idx}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+  function fail(message: string, key?: string) {
+    setError(message)
+    if (key) setLines(ls => ls.map(l => (l.key === key ? { ...l, open: true } : l)))
+    toast.show({ tone: 'danger', message, action: key ? { label: 'ไปที่รายการ', onClick: () => goToLine(key) } : undefined })
+  }
 
   const project = projects.find(p => p.id === projectId)
   const items = useMemo(() => project?.items ?? [], [project])
@@ -218,19 +234,21 @@ export function PrForm({
     setLines(ls => ls.map(l => (l.key === key ? { ...l, ...('open' in patch ? {} : { open: l.open ?? true }), ...patch } : l)))
   }
 
-  function buildPayload(): QueuedPrPayload | string {
-    if (!projectId) return 'กรุณาเลือกโครงการ'
+  // ข้อผิดพลาดของบรรทัดบอกเลขรายการและ key ไว้ ให้ข้อความเตือนพาไปที่การ์ดนั้นได้
+  function buildPayload(): QueuedPrPayload | { error: string; key?: string } {
+    if (!projectId) return { error: 'กรุณาเลือกโครงการ' }
     const payloadLines: PrLinePayload[] = []
-    for (const e of evaluated) {
-      if (!e.item) return 'กรุณาเลือกรายการ BOQ ให้ครบทุกบรรทัด'
+    for (const [idx, e] of evaluated.entries()) {
+      const bad = (msg: string) => ({ error: `รายการที่ ${idx + 1}: ${msg}`, key: e.line.key })
+      if (!e.item) return bad('ยังไม่ได้เลือกรายการ BOQ')
       const qty = Number(e.line.qty)
       const price = Number(e.line.unit_price)
       const factor = lineFactor(e.line)
-      if (e.line.buy_other && !e.line.buy_unit.trim()) return 'กรุณาระบุหน่วยที่ซื้อ'
-      if (factor !== null && Number.isNaN(factor)) return 'ตัวแปลงหน่วยต้องมากกว่า 0 หรือเว้นว่างไว้'
-      if (!(qty > 0)) return 'ปริมาณต้องมากกว่า 0'
-      if (!(price >= 0) || e.line.unit_price === '') return 'กรุณากรอกราคาต่อหน่วย'
-      if (e.ev!.requiresReason && !e.line.variance_reason.trim()) return 'กรุณาระบุเหตุผลสำหรับรายการที่เกิน BOQ เกินราคาที่ทดไว้ หรือนอก BOQ'
+      if (e.line.buy_other && !e.line.buy_unit.trim()) return bad('กรุณาระบุหน่วยที่ซื้อ')
+      if (factor !== null && Number.isNaN(factor)) return bad('ตัวแปลงหน่วยต้องมากกว่า 0 หรือเว้นว่างไว้')
+      if (!(qty > 0)) return bad('ปริมาณต้องมากกว่า 0')
+      if (!(price >= 0) || e.line.unit_price === '') return bad('กรุณากรอกราคาต่อหน่วย')
+      if (e.ev!.requiresReason && !e.line.variance_reason.trim()) return bad('กรุณาระบุเหตุผล (เกิน BOQ เกินราคาที่ทดไว้ หรือนอก BOQ)')
       payloadLines.push({
         boq_item_id: e.item.id,
         description: e.item.description,
@@ -250,9 +268,10 @@ export function PrForm({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    toast.dismiss()
     const payload = buildPayload()
-    if (typeof payload === 'string') {
-      setError(payload)
+    if ('error' in payload) {
+      fail(payload.error, payload.key)
       return
     }
     setPending(true)
@@ -268,7 +287,7 @@ export function PrForm({
       const res = await submitPurchaseRequest(payload)
       setPending(false)
       if (!res.ok) {
-        setError(res.error)
+        fail(res.error)
         return
       }
       if (onSaved) {
@@ -286,7 +305,7 @@ export function PrForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
+    <form ref={formRef} onSubmit={onSubmit} className="space-y-4">
       {!online && <Alert tone="warning">ออฟไลน์ ฟอร์มที่ส่งจะถูกเก็บไว้และส่งอัตโนมัติเมื่อกลับมาออนไลน์</Alert>}
       {queuedMsg && <Alert tone="success">{queuedMsg}</Alert>}
       {error && <Alert tone="danger">{error}</Alert>}
@@ -319,7 +338,7 @@ export function PrForm({
         const expanded = line.open ?? status.attention
         const unitLabel = line.buy_other && line.buy_unit ? line.buy_unit : item?.unit ?? ''
         return (
-          <div key={line.key} className={cn('rounded-xl border border-border border-l-4 bg-card shadow-sm', TONE_BORDER[status.tone])}>
+          <div key={line.key} id={`pr-line-${idx}`} className={cn('scroll-mt-16 rounded-xl border border-border border-l-4 bg-card shadow-sm', TONE_BORDER[status.tone])}>
             {/* หัวการ์ด: เห็นรายการ ยอดเงิน และสถานะในบรรทัดเดียว แตะเพื่อเปิดปิด */}
             <button
               type="button"

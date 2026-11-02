@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select'
 import { Alert } from '@/components/ui/alert'
 import { PrForm, type PrFormProject } from './pr-form'
 import { PurchaseDocumentPicker, PurchaseDocumentSummary, prepareFile } from './purchase-document-reader'
+import { useToast } from './toast'
 
 type Status = 'queued' | 'reading' | 'ready' | 'unassigned' | 'error' | 'saved'
 
@@ -46,6 +47,7 @@ export function PurchaseEntry({
 }) {
   const online = useOnline()
   const [docs, setDocs] = useState<DocEntry[]>([])
+  const toast = useToast()
   const slots = useRef(PARALLEL)
   const waiting = useRef<(() => void)[]>([])
 
@@ -65,7 +67,16 @@ export function PurchaseEntry({
   }
 
   // อ่านผ่าน Route Handler ให้หลายใบอ่านพร้อมกันได้ และไม่ขวางปุ่มบันทึกของใบที่อ่านเสร็จแล้ว
-  async function read(entry: { key: string; file: File }, projectId: string | null, doc: PurchaseDocumentResult['unassigned_doc']) {
+  // ผลอ่านแต่ละใบเด้งที่มุมขวาล่าง พร้อมปุ่มพาไปที่การ์ดของใบนั้น ไม่ต้องเลื่อนหาเอง
+  function announce(entry: { key: string; name: string }, tone: 'danger' | 'warning' | 'success', message: string) {
+    toast.show({
+      tone,
+      message: `${entry.name}: ${message}`,
+      action: { label: 'ดู', onClick: () => document.getElementById(`doc-${entry.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+    })
+  }
+
+  async function read(entry: { key: string; name: string; file: File }, projectId: string | null, doc: PurchaseDocumentResult['unassigned_doc']) {
     await acquire()
     patch(entry.key, { status: 'reading', error: null })
     try {
@@ -77,14 +88,25 @@ export function PurchaseEntry({
       const res = await fetch('/api/purchase-documents', { method: 'POST', body: fd })
       const json = (await res.json().catch(() => null)) as ActionResult<PurchaseDocumentResult> | null
       if (!json) {
-        patch(entry.key, { status: 'error', error: `อ่านไม่สำเร็จ (HTTP ${res.status}) ลองใหม่อีกครั้ง` })
+        const msg = `อ่านไม่สำเร็จ (HTTP ${res.status}) ลองใหม่อีกครั้ง`
+        patch(entry.key, { status: 'error', error: msg })
+        announce(entry, 'danger', msg)
       } else if (!json.ok) {
         patch(entry.key, { status: 'error', error: json.error })
+        announce(entry, 'danger', json.error)
       } else {
-        patch(entry.key, { status: json.data.project_id ? 'ready' : 'unassigned', result: json.data })
+        const r = json.data
+        patch(entry.key, { status: r.project_id ? 'ready' : 'unassigned', result: r })
+        const unmatched = r.lines.filter(l => !l.boq_item_id).length
+        if (r.read_error) announce(entry, 'warning', r.read_error)
+        else if (!r.project_id) announce(entry, 'warning', 'หาโครงการจากเลขงานไม่เจอ เลือกโครงการให้ใบนี้')
+        else if (r.issues.length) announce(entry, 'warning', `ตัวเลขในเอกสารไม่ตรงกัน ${r.issues.length} จุด ตรวจกับเอกสารจริง`)
+        else if (unmatched) announce(entry, 'warning', `ยังไม่ได้จับคู่ BOQ ${unmatched} บรรทัด`)
+        else announce(entry, 'success', `อ่านเสร็จ ${r.lines.length} รายการ`)
       }
     } catch {
       patch(entry.key, { status: 'error', error: 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง' })
+      announce(entry, 'danger', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง')
     } finally {
       release()
     }
@@ -134,7 +156,7 @@ export function PurchaseEntry({
           </div>
 
           {docs.map((d, idx) => (
-            <section key={d.key} className="rounded-xl border-2 border-border p-3 space-y-3">
+            <section key={d.key} id={`doc-${d.key}`} className="scroll-mt-16 rounded-xl border-2 border-border p-3 space-y-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="font-semibold">ใบที่ {idx + 1}</div>

@@ -11,6 +11,7 @@ import { Alert } from '@/components/ui/alert'
 import { FormField } from './common'
 import { todayISO } from '@/lib/date'
 import { DateInput } from './date-input'
+import { useErrorToast } from './toast'
 
 interface Item {
   id: string
@@ -32,6 +33,7 @@ export function ExpenseForm({ projects, initialProjectId }: { projects: Project[
   const [itemId, setItemId] = useState('')
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
+  useErrorToast(error)
   const [pending, setPending] = useState(false)
   const project = projects.find(p => p.id === projectId)
   const item = project?.items.find(i => i.id === itemId)
