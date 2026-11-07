@@ -40,7 +40,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className="font-sans antialiased">
-        <SessionProvider>
+        <SessionProvider refetchOnWindowFocus={false}>
           {children}
         </SessionProvider>
       </body>
