@@ -22,12 +22,12 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // getClaims ตรวจ JWT ในเครื่องได้ ไม่ต้องถาม Auth server ทุกครั้งที่เปลี่ยนหน้า (ยัง refresh session ให้เหมือนเดิม)
+  const { data } = await supabase.auth.getClaims()
+  const user = data?.claims?.sub ? data.claims : null
 
   const { pathname } = request.nextUrl
-  const isPublic = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/offline')
+  const isPublic = pathname.startsWith('/login') || pathname.startsWith('/register') || pathname.startsWith('/offline') || pathname === '/api/health'
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone()

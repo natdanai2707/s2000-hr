@@ -1,4 +1,5 @@
 import 'server-only'
+import { cache } from 'react'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import type { Profile, Settings, UserRole } from '@/lib/types'
@@ -11,19 +12,20 @@ export interface CurrentUser {
 }
 
 // อ่านผู้ใช้ปัจจุบันจาก session ถ้าไม่มี redirect ไป login
-export async function requireUser(): Promise<CurrentUser> {
+// cache ต่อหนึ่ง request: layout และ page เรียกซ้ำได้โดยไม่ถามเซิร์ฟเวอร์ซ้ำ
+// getClaims ตรวจลายเซ็น JWT ในเครื่องได้ (คีย์แบบ asymmetric) ไม่ต้องถาม Auth server ทุกครั้งเหมือน getUser
+export const requireUser = cache(async (): Promise<CurrentUser> => {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-  const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
+  const { data } = await supabase.auth.getClaims()
+  const claims = data?.claims
+  if (!claims?.sub) redirect('/login')
+  const { data: profile } = await supabase.from('profiles').select('*').eq('id', claims.sub).maybeSingle()
   if (!profile || !profile.is_active) {
     await supabase.auth.signOut()
     redirect('/login?error=inactive')
   }
-  return { id: user.id, email: user.email ?? null, profile: profile as Profile }
-}
+  return { id: claims.sub, email: (claims.email as string | undefined) ?? null, profile: profile as Profile }
+})
 
 export function hasRole(profile: Profile, roles: UserRole[]): boolean {
   return roles.includes(profile.role)
@@ -35,7 +37,7 @@ export async function requireRole(roles: UserRole[]): Promise<CurrentUser> {
   return user
 }
 
-export async function loadSettings(): Promise<Settings> {
+export const loadSettings = cache(async (): Promise<Settings> => {
   const supabase = await createClient()
   const { data } = await supabase.from('settings').select('key, value')
   const out: Settings = { ...DEFAULT_SETTINGS }
@@ -46,4 +48,4 @@ export async function loadSettings(): Promise<Settings> {
     if (row.key === 'direct_purchase_mode') out.direct_purchase_mode = row.value === true
   }
   return out
-}
+})
