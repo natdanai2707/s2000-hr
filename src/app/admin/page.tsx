@@ -27,6 +27,8 @@ export default function AdminPage() {
   const menus = [
     { icon: '📊', label: 'ออก Payroll (Excel)', sub: 'สรุปเงินเดือน/ค่าแรง 4 ชีต', href: '/admin/export' },
     { icon: '📄', label: 'ใบปฏิบัติงาน (Excel)', sub: 'รายวัน แยกรายคน', href: '/admin/export-worklog' },
+    { icon: '🏗️', label: 'ต้นทุนแรงงานต่องาน', sub: 'รายงานต้นทุนต่อโปรเจกต์', href: '/admin/project-cost' },
+    { icon: '👤', label: 'จัดการพนักงาน & เรท', sub: 'เพิ่ม/แก้พนักงาน ค่าแรง โควต้า', href: '/admin/staff' },
     { icon: '👥', label: 'สรุปทีมวันนี้', sub: 'ใครลา/อยู่ไซต์ไหน', href: '/team' },
     { icon: '🔗', label: 'ผูก Line ID', sub: 'ตั้งค่าแจ้งเตือน LINE พนักงาน/หัวหน้า', href: '/admin/employees' },
     { icon: '📍', label: 'จัดการไซต์งาน', sub: 'พิกัด GPS geofencing', href: '/admin/sites' },
