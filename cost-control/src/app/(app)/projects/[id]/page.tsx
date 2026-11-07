@@ -14,6 +14,8 @@ import { statusTone } from '@/components/app/project-card'
 import { DeleteProjectButton } from '@/components/app/delete-project-button'
 import { FinishProjectButton } from '@/components/app/finish-project-button'
 import { EditBoqButton } from '@/components/app/edit-boq-button'
+import { CloseoutTags } from '@/components/app/closeout-tags'
+import { closeoutWarnings, isFinished } from '@/lib/closeout'
 import { cn } from '@/lib/utils'
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -55,6 +57,21 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
   const canManage = user.profile.role === 'management' || user.profile.role === 'admin' || (user.profile.role === 'project_manager' && (members ?? []).some(m => m.user_id === user.id))
   const tone = statusTone(s)
+  const finished = isFinished(s.status)
+  const handoverDate = (receivable?.handover_date as string | null | undefined) ?? null
+  const warnings = closeoutWarnings(receivable ? { ...receivable, handover_date: handoverDate } : null)
+  const finishButton = (
+    <FinishProjectButton
+      projectId={id}
+      status={s.status}
+      actualEndDate={s.actual_end_date}
+      handoverDate={handoverDate}
+      warnings={warnings}
+      contract={toNumber(s.contract_value)}
+      actualCost={toNumber(s.actual)}
+      variant={finished ? 'default' : 'outline'}
+    />
+  )
   const toneLabel = { normal: 'ปกติ', watch: 'เฝ้าระวัง', alert: 'เตือน' }[tone]
 
   return (
@@ -71,15 +88,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               <EditBoqButton projectId={id} confirmedVersionId={user.profile.role === 'management' || user.profile.role === 'admin' ? s.confirmed_version_id : null} />
             )}
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/boq/import`}>นำเข้า BOQ</Link></Button>}
-            {canManage && s.status !== 'closed' && (
-              <FinishProjectButton
-                projectId={id}
-                contract={toNumber(s.contract_value)}
-                actualCost={toNumber(s.actual)}
-                outstanding={toNumber(receivable?.outstanding)}
-                retentionHeld={toNumber(receivable?.retention_held)}
-              />
-            )}
+            {canManage && !finished && finishButton}
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/edit`}>แก้ไขโครงการ</Link></Button>}
             {(user.profile.role === 'management' || user.profile.role === 'admin') && (
               <DeleteProjectButton projectId={id} projectCode={s.code} />
@@ -101,6 +110,23 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             : s.days_remaining !== null && ` (${s.days_remaining < 0 ? `เกิน ${Math.abs(s.days_remaining)} วัน` : `เหลือ ${s.days_remaining} วัน`})`}
         </span>
       </div>
+
+      {finished && (
+        <section className="mb-6 rounded border-l-4 border-l-primary bg-muted/50 px-4 py-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-2">
+              <div className="font-display text-lg font-bold">{s.status === 'closed' ? 'ปิดโครงการแล้ว' : 'งานเสร็จแล้ว'}</div>
+              <div className="text-sm text-muted-foreground">
+                เสร็จหน้างาน {s.actual_end_date ? formatThaiDate(s.actual_end_date) : '-'}
+                {' · '}
+                {handoverDate ? `ส่งงาน ${formatThaiDate(handoverDate)}` : 'ยังไม่ส่งงาน'}
+              </div>
+              <CloseoutTags warnings={warnings} billingHref={financeRole ? `/billing?project=${id}` : undefined} />
+            </div>
+            {canManage && <div className="shrink-0">{finishButton}</div>}
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 mb-6">
         <Stat label="มูลค่าสัญญา" value={formatBaht(s.contract_value)} />

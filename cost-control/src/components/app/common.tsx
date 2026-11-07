@@ -87,7 +87,7 @@ const prVariant: Record<string, Variant> = {
 }
 const poVariant: Record<string, Variant> = { issued: 'default', partially_received: 'warning', received: 'success', cancelled: 'neutral' }
 const invVariant: Record<string, Variant> = { received: 'warning', approved: 'default', paid: 'success' }
-const projVariant: Record<string, Variant> = { draft: 'neutral', active: 'success', closing: 'warning', closed: 'neutral' }
+const projVariant: Record<string, Variant> = { draft: 'neutral', active: 'success', closing: 'default', closed: 'neutral' }
 const boqVariant: Record<string, Variant> = { draft: 'neutral', confirmed: 'success', superseded: 'neutral' }
 
 export function StatusBadge({ kind, status }: { kind: 'pr' | 'po' | 'invoice' | 'project' | 'boq'; status: string }) {

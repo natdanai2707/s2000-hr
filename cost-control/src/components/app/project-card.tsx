@@ -5,13 +5,15 @@ import { formatThaiDate } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { costTone, consumedPct, hasBudget } from '@/lib/cost'
 import { CostMeter } from './cost-meter'
+import type { CloseoutWarning } from '@/lib/closeout'
+import { CloseoutTags } from './closeout-tags'
 
 // ใช้กติกาเดียวกับหน้าภาพรวมต้นทุน
 export const statusTone = costTone
 
 const toneClass = { normal: 'border-l-status-normal', watch: 'border-l-status-watch', alert: 'border-l-status-alert' }
 
-export function ProjectCard({ project: p }: { project: ProjectSummary }) {
+export function ProjectCard({ project: p, closeout }: { project: ProjectSummary; closeout?: CloseoutWarning[] }) {
   const tone = statusTone(p)
   const days = p.days_remaining
   return (
@@ -23,6 +25,7 @@ export function ProjectCard({ project: p }: { project: ProjectSummary }) {
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">{p.code}</div>
           <div className="font-display text-[17px] font-bold leading-snug">{p.name}</div>
+          {closeout && <CloseoutTags warnings={closeout} className="mt-1.5" />}
         </div>
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">

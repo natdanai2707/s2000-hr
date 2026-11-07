@@ -63,6 +63,7 @@ export async function updateProject(projectId: string, fd: FormData): Promise<Ac
     start_date: dateOrNull(fd, 'start_date'),
     planned_end_date: dateOrNull(fd, 'planned_end_date'),
     actual_end_date: dateOrNull(fd, 'actual_end_date'),
+    handover_date: dateOrNull(fd, 'handover_date'),
     retention_pct: num(fd, 'retention_pct'),
     penalty_per_day: num(fd, 'penalty_per_day'),
   }
@@ -156,14 +157,26 @@ export async function deleteProject(projectId: string, confirmCode: string): Pro
   return { ok: true, data: undefined }
 }
 
-// จบงาน: บันทึกวันที่งานเสร็จจริง และเลือกว่ายังรอเก็บเงิน (กำลังปิด) หรือปิดโครงการเลย
-// เปิดกลับได้ที่หน้าแก้ไขโครงการ เปลี่ยนสถานะเป็นกำลังดำเนินการ
-export async function finishProject(projectId: string, status: 'closing' | 'closed', actualEndDate: string): Promise<ActionResult> {
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+// จบงาน: แจ้งงานเสร็จได้เสมอ แม้ยังไม่ส่งงาน ยังไม่วางบิล หรือยังไม่รับเงิน หน้าโครงการจะเตือนเรื่องที่ค้างไว้
+// closing = งานเสร็จแล้ว ยังวางบิลและรับเงินต่อได้ · closed = ปิดโครงการ เมื่อเก็บเงินครบ
+// เปิดกลับเป็นกำลังดำเนินการได้ที่หน้าแก้ไขโครงการ
+export async function saveCompletion(
+  projectId: string,
+  input: { status: 'closing' | 'closed'; actualEndDate: string; handoverDate: string | null }
+): Promise<ActionResult> {
   await requireUser()
+  const { status, actualEndDate, handoverDate } = input
   if (status !== 'closing' && status !== 'closed') return fail('สถานะไม่ถูกต้อง')
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(actualEndDate)) return fail('กรุณาระบุวันที่งานเสร็จ')
+  if (!ISO_DATE.test(actualEndDate)) return fail('กรุณาระบุวันที่งานเสร็จ')
+  if (handoverDate !== null && !ISO_DATE.test(handoverDate)) return fail('วันที่ส่งงานไม่ถูกต้อง')
   const supabase = await createClient()
-  const { data, error } = await supabase.from('projects').update({ status, actual_end_date: actualEndDate }).eq('id', projectId).select('id')
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ status, actual_end_date: actualEndDate, handover_date: handoverDate })
+    .eq('id', projectId)
+    .select('id')
   if (error) return fail(error)
   if (!data || data.length === 0) return fail('ไม่มีสิทธิ์แก้ไขโครงการนี้ หรือไม่พบโครงการ')
   revalidatePath(`/projects/${projectId}`)

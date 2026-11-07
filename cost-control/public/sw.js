@@ -2,7 +2,7 @@
    - cache shell และไฟล์ static แบบ stale-while-revalidate
    - หน้า HTML ใช้ network-first ถ้าออฟไลน์ตอบจาก cache หรือหน้า /offline
    - การส่งฟอร์ม offline จัดการใน IndexedDB ฝั่งแอป (src/lib/offline/queue.ts) */
-const VERSION = 'v1'
+const VERSION = 'v2'
 const SHELL_CACHE = `s2000-shell-${VERSION}`
 const RUNTIME_CACHE = `s2000-runtime-${VERSION}`
 const OFFLINE_URL = '/offline'

@@ -32,8 +32,8 @@ export type ProjectStatus = 'draft' | 'active' | 'closing' | 'closed'
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   draft: 'ร่าง',
   active: 'กำลังดำเนินการ',
-  closing: 'กำลังปิด',
-  closed: 'ปิดแล้ว',
+  closing: 'งานเสร็จแล้ว',
+  closed: 'ปิดโครงการแล้ว',
 }
 
 export type BoqVersionType = 'quotation' | 'confirmed' | 'variation_order'
@@ -108,6 +108,7 @@ export interface Project {
   start_date: string | null
   planned_end_date: string | null
   actual_end_date: string | null
+  handover_date: string | null
   status: ProjectStatus
   retention_pct: number
   penalty_per_day: number
