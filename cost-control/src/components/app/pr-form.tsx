@@ -346,7 +346,7 @@ export function PrForm({
               aria-expanded={expanded}
               className="flex w-full items-start gap-3 p-3 text-left md:p-4"
             >
-              <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">{idx + 1}</span>
+              <span className="mt-0.5 inline-flex h-7 min-w-7 px-1 shrink-0 items-center justify-center rounded-sm bg-foreground font-display text-sm font-semibold text-primary-foreground">{idx + 1}</span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-medium leading-snug">
                   {item && !item.is_off_boq ? `${item.item_no ? `${item.item_no} ` : ''}${item.description}` : line.doc_desc || item?.description || 'รายการใหม่'}
@@ -361,7 +361,7 @@ export function PrForm({
                     </span>
                   )}
                   {status.chips.map(c => (
-                    <span key={c.text} className={cn('rounded-full px-2 py-0.5 font-medium', CHIP[c.tone])}>{c.text}</span>
+                    <span key={c.text} className={cn('rounded-sm px-1.5 py-0.5 font-semibold', CHIP[c.tone])}>{c.text}</span>
                   ))}
                 </span>
               </span>

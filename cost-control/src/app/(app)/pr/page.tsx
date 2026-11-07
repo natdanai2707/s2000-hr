@@ -40,11 +40,11 @@ export default async function PrListPage({ searchParams }: { searchParams: Promi
       <PageHeader title={direct ? 'รายการสั่งซื้อ' : 'ใบขอซื้อ'} actions={<Button asChild><Link href="/pr/new">{newLabel}</Link></Button>} />
       <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1 text-sm md:mx-0 md:flex-wrap md:px-0 [&>a]:shrink-0 [&>a]:whitespace-nowrap">
         {FILTERS.map(x => (
-          <Link key={x.key} href={`/pr?filter=${x.key}${mine === '1' ? '&mine=1' : ''}`} className={cn('rounded-full border px-3 py-1', x.key === f.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-card')}>
+          <Link key={x.key} href={`/pr?filter=${x.key}${mine === '1' ? '&mine=1' : ''}`} className={cn('inline-flex h-10 items-center rounded border px-3 font-medium', x.key === f.key ? 'bg-primary text-primary-foreground border-primary' : 'border-input bg-background hover:bg-muted')}>
             {x.label}
           </Link>
         ))}
-        <Link href={`/pr?filter=${f.key}${mine === '1' ? '' : '&mine=1'}`} className={cn('rounded-full border px-3 py-1', mine === '1' ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-card')}>
+        <Link href={`/pr?filter=${f.key}${mine === '1' ? '' : '&mine=1'}`} className={cn('inline-flex h-10 items-center rounded border px-3 font-medium', mine === '1' ? 'bg-primary text-primary-foreground border-primary' : 'border-input bg-background hover:bg-muted')}>
           ของฉัน
         </Link>
       </div>

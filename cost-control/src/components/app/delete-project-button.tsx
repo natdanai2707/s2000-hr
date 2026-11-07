@@ -44,7 +44,7 @@ export function DeleteProjectButton({ projectId, projectCode }: { projectId: str
 
   return (
     <>
-      <Button variant="destructive" onClick={openDialog}>
+      <Button variant="danger-outline" onClick={openDialog}>
         ลบโครงการ
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>

@@ -4,12 +4,15 @@ import { LoginForm } from './login-form'
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
   const { next, error } = await searchParams
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <h1 className="text-xl font-semibold text-primary">S-2000 Project Cost Control</h1>
-          <p className="text-sm text-muted-foreground mt-1">บริษัท เอส-2000 สตีล แฟบริเคท จำกัด</p>
+    <div className="min-h-screen bg-background">
+      <div className="bg-primary px-4 pb-16 pt-14 text-primary-foreground">
+        <div className="mx-auto max-w-sm">
+          <div className="font-display text-4xl font-bold leading-none">S-2000</div>
+          <div className="font-display text-lg font-medium text-white/85 mt-1">Project Cost Control</div>
+          <p className="text-sm text-white/70 mt-3">บริษัท เอส-2000 สตีล แฟบริเคท จำกัด</p>
         </div>
+      </div>
+      <div className="mx-auto -mt-10 w-full max-w-sm px-4 pb-10">
         <LoginForm
           next={next ?? '/'}
           initialError={error === 'inactive' ? 'บัญชีนี้ยังไม่เปิดใช้งาน ถ้าเพิ่งสมัคร รอฝ่ายบริหารเปิดบัญชีให้ก่อน' : null}

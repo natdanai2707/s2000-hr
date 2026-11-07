@@ -82,7 +82,7 @@ export function BoqVersionActions({
         </Button>
       )}
       {canDelete && (
-        <Button variant="destructive" onClick={() => setOpen('delete')}>
+        <Button variant="danger-outline" onClick={() => setOpen('delete')}>
           ลบเวอร์ชันนี้
         </Button>
       )}
