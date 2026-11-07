@@ -7,6 +7,36 @@ import { useState } from 'react'
 export default function LoginPage() {
   const router = useRouter()
   const [showDemo, setShowDemo] = useState(false)
+  const [showManager, setShowManager] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [mgrError, setMgrError] = useState('')
+  const [mgrLoading, setMgrLoading] = useState(false)
+
+  async function managerLogin() {
+    if (!email.trim() || !password) {
+      setMgrError('กรุณากรอกอีเมลและรหัสผ่าน')
+      return
+    }
+    setMgrLoading(true)
+    setMgrError('')
+    try {
+      const res = await signIn('credentials', {
+        email: email.trim(),
+        password,
+        redirect: false,
+      })
+      if (res?.error) {
+        setMgrError('อีเมลหรือรหัสผ่านไม่ถูกต้อง')
+        setMgrLoading(false)
+        return
+      }
+      router.push('/admin')
+    } catch {
+      setMgrError('เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่')
+      setMgrLoading(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 flex items-center justify-center px-4">
@@ -22,7 +52,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-3">
           <button
             onClick={() => signIn('line', { callbackUrl: '/dashboard' })}
-            className="w-full flex items-center justify-center gap-3 bg-[#06C755] text-white rounded-xl py-3.5 font-medium text-sm hover:bg-[#05b54d] transition"
+            className="w-full flex items-center justify-center gap-3 bg-[#06C755] text-white rounded-xl py-3.5 min-h-11 font-medium text-sm hover:bg-[#05b54d] transition"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="white">
               <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/>
@@ -30,9 +60,47 @@ export default function LoginPage() {
             เข้าสู่ระบบด้วย LINE
           </button>
 
+          {/* ผู้จัดการ: อีเมล + รหัสผ่าน */}
+          <button
+            onClick={() => setShowManager(v => !v)}
+            className="w-full text-center text-xs text-gray-400 py-1 min-h-9"
+          >
+            {showManager ? 'ซ่อน' : '🔑 เข้าสู่ระบบสำหรับผู้จัดการ (อีเมล)'}
+          </button>
+
+          {showManager && (
+            <div className="space-y-2 pt-2 border-t border-gray-100">
+              <input
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setMgrError('') }}
+                placeholder="อีเมล"
+                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 min-h-11 text-sm text-gray-800"
+              />
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={e => { setPassword(e.target.value); setMgrError('') }}
+                placeholder="รหัสผ่าน"
+                onKeyDown={e => { if (e.key === 'Enter') managerLogin() }}
+                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 min-h-11 text-sm text-gray-800"
+              />
+              {mgrError && <p className="text-red-500 text-xs">{mgrError}</p>}
+              <button
+                onClick={managerLogin}
+                disabled={mgrLoading}
+                className="w-full bg-gray-800 text-white rounded-xl py-2.5 min-h-11 font-medium text-sm disabled:opacity-50"
+              >
+                {mgrLoading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => setShowDemo(!showDemo)}
-            className="w-full text-center text-xs text-gray-400 py-1"
+            className="w-full text-center text-xs text-gray-400 py-1 min-h-9"
           >
             {showDemo ? 'ซ่อนโหมดทดลอง' : 'ทดลองใช้งาน (Demo)'}
           </button>
@@ -41,13 +109,13 @@ export default function LoginPage() {
             <div className="space-y-2 pt-2 border-t border-gray-100">
               <button
                 onClick={() => router.push('/demo/employee')}
-                className="w-full flex items-center justify-center gap-2 bg-blue-50 text-blue-600 rounded-xl py-3 font-medium text-sm hover:bg-blue-100 transition"
+                className="w-full flex items-center justify-center gap-2 bg-blue-50 text-blue-600 rounded-xl py-3 min-h-11 font-medium text-sm hover:bg-blue-100 transition"
               >
                 👷 ทดลองแบบพนักงาน
               </button>
               <button
                 onClick={() => router.push('/demo/approver')}
-                className="w-full flex items-center justify-center gap-2 bg-amber-50 text-amber-600 rounded-xl py-3 font-medium text-sm hover:bg-amber-100 transition"
+                className="w-full flex items-center justify-center gap-2 bg-amber-50 text-amber-600 rounded-xl py-3 min-h-11 font-medium text-sm hover:bg-amber-100 transition"
               >
                 👔 ทดลองแบบผู้อนุมัติ
               </button>
