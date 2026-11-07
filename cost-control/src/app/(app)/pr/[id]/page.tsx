@@ -15,20 +15,21 @@ import { QtyFactorEditor } from '@/components/app/qty-factor-editor'
 
 export default async function PrDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const user = await requireUser()
   const supabase = await createClient()
-  const { data: pr } = await supabase
-    .from('purchase_requests')
-    .select('*, projects(id, code, name), profiles!purchase_requests_requested_by_fkey(full_name)')
-    .eq('id', id)
-    .maybeSingle()
-  if (!pr) notFound()
-  const [{ data: items }, { data: approvals }, { data: members }, { data: po }] = await Promise.all([
+  // ทุกอย่างอ้างจาก id ของใบนี้ ถามพร้อมกันได้หมด ยกเว้นสมาชิกโครงการที่ต้องรู้โครงการก่อน
+  const [user, { data: pr }, { data: items }, { data: approvals }, { data: po }] = await Promise.all([
+    requireUser(),
+    supabase
+      .from('purchase_requests')
+      .select('*, projects(id, code, name), profiles!purchase_requests_requested_by_fkey(full_name)')
+      .eq('id', id)
+      .maybeSingle(),
     supabase.from('purchase_request_items').select('*, boq_items(item_no, description, unit, qty, unit_cost, is_off_boq)').eq('pr_id', id).order('created_at'),
     supabase.from('approvals').select('*, profiles!approvals_approver_id_fkey(full_name)').eq('document_type', 'purchase_request').eq('document_id', id).order('decided_at'),
-    supabase.from('project_members').select('user_id').eq('project_id', pr.project_id),
     supabase.from('purchase_orders').select('id, po_no, status').eq('pr_id', id).neq('status', 'cancelled').maybeSingle(),
   ])
+  if (!pr) notFound()
+  const { data: members } = await supabase.from('project_members').select('user_id').eq('project_id', pr.project_id)
   const proj = pr.projects as unknown as { id: string; code: string; name: string }
   const isMember = (members ?? []).some(m => m.user_id === user.id)
   const role = user.profile.role

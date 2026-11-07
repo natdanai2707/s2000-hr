@@ -18,11 +18,15 @@ import { cn } from '@/lib/utils'
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const user = await requireUser()
-  const direct = usesDirectPurchase(await loadSettings(), user.profile.role)
   const supabase = await createClient()
-
-  const { data: summary } = await supabase.from('v_project_summary').select('*').eq('project_id', id).maybeSingle()
+  // ข้อมูลที่ไม่ขึ้นต่อกันถามพร้อมกัน ลดจำนวนรอบที่ต้องรอฐานข้อมูล
+  const [user, settings, { data: summary }, { data: receivable }] = await Promise.all([
+    requireUser(),
+    loadSettings(),
+    supabase.from('v_project_summary').select('*').eq('project_id', id).maybeSingle(),
+    supabase.from('v_project_receivables').select('*').eq('project_id', id).maybeSingle(),
+  ])
+  const direct = usesDirectPurchase(settings, user.profile.role)
   if (!summary) notFound()
   const s = summary as ProjectSummary
 
@@ -47,7 +51,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       supabase.from('profiles').select('id, full_name, role, is_active').eq('is_active', true).order('full_name'),
       supabase.from('branches').select('name').eq('id', s.branch_id).maybeSingle(),
     ])
-  const { data: receivable } = await supabase.from('v_project_receivables').select('*').eq('project_id', id).maybeSingle()
   const financeRole = ['accounting', 'management', 'admin'].includes(user.profile.role)
 
   const canManage = user.profile.role === 'management' || user.profile.role === 'admin' || (user.profile.role === 'project_manager' && (members ?? []).some(m => m.user_id === user.id))
