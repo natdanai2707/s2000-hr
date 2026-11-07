@@ -48,6 +48,14 @@ export default function DashboardPage() {
     if (status === 'unauthenticated') router.push('/login')
   }, [status, router])
 
+  // ผู้จัดการ (login ด้วยอีเมล) ไม่ใช้หน้าพนักงาน — ส่งไปหน้าจัดการระบบ
+  useEffect(() => {
+    if (status === 'loading') return
+    if (session?.user?.isManager && !session?.user?.employeeId) {
+      router.replace('/admin')
+    }
+  }, [session, status, router])
+
   useEffect(() => {
     if (!session) return
     if (!session?.user?.employeeId) {
@@ -222,6 +230,14 @@ export default function DashboardPage() {
   }
 
   if (!session?.user?.employeeId) {
+    // ผู้จัดการถูกส่งไป /admin โดย effect ด้านบน — แสดงจอรอระหว่างเปลี่ยนหน้า
+    if (session?.user?.isManager) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <p className="text-gray-400">กำลังเข้าสู่หน้าจัดการระบบ...</p>
+        </div>
+      )
+    }
     const submitRegistration = async () => {
       if (!regFirst.trim() || !regLast.trim()) {
         setRegError('กรุณากรอกชื่อจริงและนามสกุล')
