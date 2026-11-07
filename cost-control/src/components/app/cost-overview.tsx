@@ -6,9 +6,11 @@ import { CostMeter } from './cost-meter'
 import { formatBaht, formatPct, toNumber } from '@/lib/format'
 import { COST_TONE_LABELS, consumedAmount, consumedPct, costTone, hasBudget, portfolioTotals } from '@/lib/cost'
 import { cn } from '@/lib/utils'
+import type { CloseoutWarning } from '@/lib/closeout'
+import { CloseoutTags } from './closeout-tags'
 
 // ภาพรวมต้นทุนทุกโครงการ: ตัวเลขรวมด้านบน แล้วรายโครงการ (การ์ดบนมือถือ ตารางบนจอใหญ่)
-export function CostOverview({ projects }: { projects: ProjectSummary[] }) {
+export function CostOverview({ projects, closeout = {} }: { projects: ProjectSummary[]; closeout?: Record<string, CloseoutWarning[]> }) {
   const totals = portfolioTotals(projects)
   const tones = projects.filter(hasBudget).map(costTone)
   const alertCount = tones.filter(t => t === 'alert').length
@@ -66,7 +68,7 @@ export function CostOverview({ projects }: { projects: ProjectSummary[] }) {
           {/* มือถือ: การ์ด */}
           <div className="border-t-2 border-foreground md:hidden">
             {projects.map(p => (
-              <ProjectCard key={p.project_id} project={p} />
+              <ProjectCard key={p.project_id} project={p} closeout={closeout[p.project_id]} />
             ))}
           </div>
 
@@ -92,6 +94,7 @@ export function CostOverview({ projects }: { projects: ProjectSummary[] }) {
                       <td className="px-4 py-3">
                         <Link href={`/projects/${p.project_id}`} className="font-medium hover:underline">{p.name}</Link>
                         <div className="text-xs text-muted-foreground">{p.code} · {PROJECT_STATUS_LABELS[p.status]}</div>
+                        {closeout[p.project_id] && <CloseoutTags warnings={closeout[p.project_id]} className="mt-1.5" />}
                       </td>
                       <td className="px-3 py-3 text-right tabular">{formatBaht(p.contract_value)}</td>
                       <td className="px-3 py-3 text-right tabular">{formatBaht(p.total_budget)}</td>

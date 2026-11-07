@@ -58,7 +58,7 @@ export function ProjectForm({ branches, project }: { branches: Branch[]; project
         <Input name="customer_name" defaultValue={project?.customer_name ?? ''} />
       </FormField>
       {project && (
-        <FormField label="สถานะโครงการ" hint="เปลี่ยนเป็นปิดแล้วเมื่อจบงาน โครงการที่ปิดจะไม่แสดงบนแดชบอร์ด">
+        <FormField label="สถานะโครงการ" hint="งานเสร็จแล้ว: หน้างานจบ ยังวางบิลและรับเงินต่อได้ · ปิดโครงการแล้ว: เก็บเงินครบ">
           <Select name="status" defaultValue={project.status}>
             {(Object.keys(PROJECT_STATUS_LABELS) as ProjectStatus[]).map(k => (
               <option key={k} value={k}>{PROJECT_STATUS_LABELS[k]}</option>
@@ -90,6 +90,11 @@ export function ProjectForm({ branches, project }: { branches: Branch[]; project
         {project && (
           <FormField label="วันที่งานเสร็จจริง" hint="เว้นว่างถ้างานยังไม่เสร็จ">
             <DateInput name="actual_end_date" defaultValue={project.actual_end_date ?? ''} />
+          </FormField>
+        )}
+        {project && (
+          <FormField label="วันที่ส่งงานให้ลูกค้า" hint="เว้นว่างถ้ายังไม่ส่งงาน">
+            <DateInput name="handover_date" defaultValue={project.handover_date ?? ''} />
           </FormField>
         )}
         <FormField label="ค่าปรับต่อวัน (บาท)">

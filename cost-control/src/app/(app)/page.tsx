@@ -8,22 +8,33 @@ import { Button } from '@/components/ui/button'
 import { Alert } from '@/components/ui/alert'
 import { consumedPct } from '@/lib/cost'
 import { cn } from '@/lib/utils'
+import { FINISHED_STATUSES, closeoutWarnings, isFinished, type CloseoutFigures, type CloseoutWarning } from '@/lib/closeout'
 
 const FILTERS = [
-  { key: 'active', label: 'กำลังดำเนินการ', statuses: ['active', 'closing'] },
+  { key: 'active', label: 'กำลังดำเนินการ', statuses: ['active'] },
+  { key: 'finished', label: 'งานเสร็จแล้ว', statuses: FINISHED_STATUSES as string[] },
   { key: 'all', label: 'ทั้งหมด', statuses: [] as string[] },
 ]
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ error?: string; show?: string }> }) {
-  const user = await requireUser()
   const { error, show } = await searchParams
   const filter = FILTERS.find(f => f.key === show) ?? FILTERS[0]
   const supabase = await createClient()
-  const direct = usesDirectPurchase(await loadSettings(), user.profile.role)
 
   let q = supabase.from('v_project_summary').select('*')
   if (filter.statuses.length) q = q.in('status', filter.statuses)
-  const { data } = await q
+  // ป้ายเตือนงานเสร็จแล้ว (ยังไม่ส่งงาน วางบิล รับเงิน) อ่านจาก view รายรับพร้อมกัน
+  const [user, settings, { data }, { data: recv }] = await Promise.all([
+    requireUser(),
+    loadSettings(),
+    q,
+    filter.key === 'active' ? Promise.resolve({ data: [] }) : supabase.from('v_project_receivables').select('*').in('status', FINISHED_STATUSES),
+  ])
+  const direct = usesDirectPurchase(settings, user.profile.role)
+  const warnings: Record<string, CloseoutWarning[]> = {}
+  for (const r of (recv ?? []) as (CloseoutFigures & { project_id: string; status: string })[]) {
+    if (isFinished(r.status)) warnings[r.project_id] = closeoutWarnings(r)
+  }
   // โครงการที่ใช้ต้นทุนไปมากที่สุดเทียบงบขึ้นก่อน โครงการที่ยังไม่มีงบอยู่ท้าย
   const projects = ((data ?? []) as ProjectSummary[]).sort((a, b) => (consumedPct(b) ?? -1) - (consumedPct(a) ?? -1))
   const canCreate = ['management', 'admin', 'project_manager'].includes(user.profile.role)
@@ -55,7 +66,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         ))}
       </div>
 
-      <CostOverview projects={projects} />
+      <CostOverview projects={projects} closeout={warnings} />
     </div>
   )
 }
