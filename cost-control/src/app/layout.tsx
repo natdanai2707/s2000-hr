@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Noto_Sans_Thai } from 'next/font/google'
+import { Bai_Jamjuree, Noto_Sans_Thai } from 'next/font/google'
 import './globals.css'
 
 const notoThai = Noto_Sans_Thai({
@@ -7,6 +7,14 @@ const notoThai = Noto_Sans_Thai({
   weight: ['400', '500', '600', '700'],
   display: 'swap',
   variable: '--font-thai',
+})
+
+// หัวข้อและตัวเลขสำคัญ
+const baiJamjuree = Bai_Jamjuree({
+  subsets: ['thai', 'latin'],
+  weight: ['500', '600', '700'],
+  display: 'swap',
+  variable: '--font-display-th',
 })
 
 export const metadata: Metadata = {
@@ -26,7 +34,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th" className={notoThai.variable}>
+    <html lang="th" className={`${notoThai.variable} ${baiJamjuree.variable}`}>
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>

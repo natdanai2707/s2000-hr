@@ -122,7 +122,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
 
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         {FILTERS.map(f => (
-          <Link key={f.key} href={qs(f.key)} className={cn('rounded-full border px-3 py-1', f.key === filter ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-card')}>
+          <Link key={f.key} href={qs(f.key)} className={cn('inline-flex h-10 items-center rounded border px-3 font-medium', f.key === filter ? 'bg-primary text-primary-foreground border-primary' : 'border-input bg-background hover:bg-muted')}>
             {f.label}
           </Link>
         ))}

@@ -17,12 +17,12 @@ export function ProjectCard({ project: p }: { project: ProjectSummary }) {
   return (
     <Link
       href={`/projects/${p.project_id}`}
-      className={cn('block rounded-xl border border-border bg-card p-4 border-l-4 hover:bg-muted/40 transition-colors', toneClass[tone])}
+      className={cn('block border-b border-l-4 border-b-border bg-card px-3 py-3 hover:bg-muted/40 transition-colors', toneClass[tone])}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">{p.code}</div>
-          <div className="font-semibold leading-tight truncate">{p.name}</div>
+          <div className="font-display text-[17px] font-bold leading-snug">{p.name}</div>
         </div>
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">

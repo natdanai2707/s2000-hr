@@ -151,9 +151,9 @@ function RowsGroup({ name, rows, tot, secPct }: { name: string; rows: BoqItemCos
 function UsedBar({ pct }: { pct: number | null }) {
   if (pct === null) return null
   return (
-    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+    <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-muted">
       <div
-        className={cn('h-full rounded-full', pct > 100 ? 'bg-status-alert' : pct > 90 ? 'bg-status-watch' : 'bg-status-normal')}
+        className={cn('h-full', pct > 100 ? 'bg-status-alert' : pct > 90 ? 'bg-status-watch' : 'bg-status-normal')}
         style={{ width: `${Math.min(pct, 100)}%` }}
       />
     </div>

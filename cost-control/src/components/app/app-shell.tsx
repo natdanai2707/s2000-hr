@@ -50,50 +50,56 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
     <div className="min-h-screen md:flex">
       <ServiceWorkerRegister />
       <OfflineSync />
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 border-r border-border bg-card no-print">
-        <div className="px-5 py-4 border-b border-border">
-          <div className="font-semibold text-primary">S-2000 Project Cost Control</div>
-          <div className="text-xs text-muted-foreground mt-1">{profile.full_name}</div>
-          <div className="text-xs text-muted-foreground">{ROLE_LABELS[profile.role]}</div>
-        </div>
-        <nav className="flex-1 overflow-y-auto py-2">
-          {sidebar.map(item => paused(item) ? (
-            <PausedItem key={item.href} label={item.label} className="px-5 py-2.5" />
+      {/* Desktop sidebar: แถบน้ำเงินเข้ม เมนูที่เลือกเป็นพื้นขาวตัวน้ำเงิน (กลับสี) เห็นชัดว่าอยู่หน้าไหน */}
+      <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 bg-primary text-primary-foreground no-print">
+        <Link href="/" className="block px-5 pt-5 pb-4 border-b border-white/15">
+          <div className="font-display text-xl font-bold leading-none">S-2000</div>
+          <div className="font-display text-sm font-medium text-white/80 mt-1">Project Cost Control</div>
+        </Link>
+        <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
+          {/* เมนูที่ยังไม่เปิดใช้งาน (เฟส 2-3) ไม่แสดง */}
+          {sidebar.filter(item => !item.phase).map(item => paused(item) ? (
+            <PausedItem key={item.href} label={item.label} className="px-3 py-2.5 text-white/45" />
           ) : (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                'block px-5 py-2.5 text-sm hover:bg-muted',
-                isActive(pathname, item.href) ? 'bg-muted font-medium text-primary border-r-2 border-primary' : 'text-foreground',
-                item.phase && 'text-muted-foreground'
+                'block rounded px-3 py-2.5 text-[15px]',
+                isActive(pathname, item.href) ? 'bg-white font-semibold text-primary' : 'text-white/90 hover:bg-white/10'
               )}
             >
               {item.label}
             </Link>
           ))}
         </nav>
-        <div className="border-t border-border p-3 space-y-1">
-          <Link href="/notifications" className="block px-2 py-2 text-sm hover:bg-muted rounded-md">
-            แจ้งเตือน{unreadCount > 0 ? ` (${unreadCount})` : ''}
+        <div className="border-t border-white/15 px-2 py-3 space-y-0.5">
+          <div className="px-3 pb-2">
+            <div className="text-sm font-semibold truncate">{profile.full_name}</div>
+            <div className="text-xs text-white/70">{ROLE_LABELS[profile.role]}</div>
+          </div>
+          <Link href="/notifications" className={cn('flex items-center justify-between rounded px-3 py-2 text-sm', pathname.startsWith('/notifications') ? 'bg-white font-semibold text-primary' : 'hover:bg-white/10')}>
+            แจ้งเตือน
+            {unreadCount > 0 && <span className="rounded-sm bg-status-watch px-1.5 text-xs font-bold text-white">{unreadCount}</span>}
           </Link>
-          <Link href="/account" className="block px-2 py-2 text-sm hover:bg-muted rounded-md">
+          <Link href="/account" className={cn('block rounded px-3 py-2 text-sm', pathname.startsWith('/account') ? 'bg-white font-semibold text-primary' : 'hover:bg-white/10')}>
             เปลี่ยนรหัสผ่าน
           </Link>
-          <button onClick={signOut} className="w-full text-left px-2 py-2 text-sm hover:bg-muted rounded-md">
+          <button onClick={signOut} className="w-full rounded px-3 py-2 text-left text-sm hover:bg-white/10">
             ออกจากระบบ
           </button>
         </div>
       </aside>
 
       {/* Mobile top bar */}
-      <header className="md:hidden sticky top-0 z-30 bg-card border-b border-border px-4 h-12 flex items-center justify-between no-print">
-        <Link href="/" className="font-semibold text-primary text-sm">
-          S-2000 Cost Control
+      <header className="md:hidden sticky top-0 z-30 bg-primary text-primary-foreground px-4 h-14 flex items-center justify-between no-print">
+        <Link href="/" className="font-display leading-none">
+          <span className="text-lg font-bold">S-2000</span>
+          <span className="ml-1.5 text-sm font-medium text-white/80">Cost Control</span>
         </Link>
-        <Link href="/notifications" className="text-sm text-muted-foreground min-h-11 inline-flex items-center">
-          แจ้งเตือน{unreadCount > 0 ? ` (${unreadCount})` : ''}
+        <Link href="/notifications" className="inline-flex h-10 items-center gap-1.5 rounded border border-white/40 px-3 text-sm font-medium">
+          แจ้งเตือน
+          {unreadCount > 0 && <span className="rounded-sm bg-status-watch px-1.5 text-xs font-bold text-white">{unreadCount}</span>}
         </Link>
       </header>
 
@@ -104,15 +110,15 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
       </main>
 
       {/* Mobile bottom navigation */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-card border-t border-border no-print" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-card border-t-2 border-foreground no-print" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="grid grid-cols-5">
           {bottomItems.map(item => (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center justify-center min-h-14 px-0.5 text-[13px] leading-tight text-center border-t-2',
-                activeBottom === item.href ? 'text-primary font-semibold border-primary' : 'text-muted-foreground border-transparent'
+                'flex flex-col items-center justify-center min-h-14 px-0.5 text-[13px] leading-tight text-center',
+                activeBottom === item.href ? 'bg-primary text-primary-foreground font-semibold' : 'text-foreground font-medium'
               )}
             >
               <span>{item.label}</span>
@@ -121,14 +127,14 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
           ))}
           <button
             onClick={() => setMoreOpen(v => !v)}
-            className={cn('flex flex-col items-center justify-center min-h-14 text-[13px] border-t-2', moreOpen ? 'text-primary font-semibold border-primary' : 'text-muted-foreground border-transparent')}
+            className={cn('flex flex-col items-center justify-center min-h-14 text-[13px]', moreOpen ? 'bg-primary text-primary-foreground font-semibold' : 'text-foreground font-medium')}
           >
             เพิ่มเติม
           </button>
         </div>
         {moreOpen && <div className="fixed inset-0 -z-10 bg-black/30" onClick={() => setMoreOpen(false)} aria-hidden="true" />}
         {moreOpen && (
-          <div className="absolute bottom-full inset-x-0 bg-card border-t border-border max-h-[70vh] overflow-y-auto rounded-t-xl shadow-lg">
+          <div className="absolute bottom-full inset-x-0 bg-card border-t-2 border-foreground max-h-[70vh] overflow-y-auto shadow-lg">
             {/* เมนูที่ยังไม่เปิดใช้งาน (เฟส 2-3) ไม่แสดงบนมือถือ */}
             {sidebar.filter(item => !item.phase).map(item => paused(item) ? (
               <PausedItem key={item.href} label={item.label} className="px-5 py-3 border-b border-border" />
@@ -137,7 +143,7 @@ export function AppShell({ profile, pendingCount, unreadCount, directMode, child
                 key={item.href}
                 href={item.href}
                 onClick={() => setMoreOpen(false)}
-                className={cn('block px-5 py-3.5 text-[15px] border-b border-border', isActive(pathname, item.href) && 'font-semibold text-primary')}
+                className={cn('block px-5 py-3.5 text-[15px] border-b border-border', isActive(pathname, item.href) ? 'bg-primary font-semibold text-primary-foreground' : 'font-medium')}
               >
                 {item.label}
               </Link>

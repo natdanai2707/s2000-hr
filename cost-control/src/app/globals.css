@@ -2,39 +2,50 @@
 
 /* ============================================================
    S-2000 Project Cost Control: design tokens
-   สีหลักน้ำเงินเข้ม (ต่างจากแอป HR ที่เป็นเขียว) + semantic สำหรับสถานะ
+   แนวทาง: ผสม Data (ตัวเลขแม่น เรียงชิดขวา เน้นสีเฉพาะจุดที่ต้องจัดการ)
+   กับ Clear (ปุ่มใหญ่ 48px คำเต็ม พนักงานหลายคนใช้ได้ไม่ต้องเรียนรู้)
+   พื้นขาว เส้นแบ่งบาง มุมเหลี่ยม 4px ไม่มีเงา สีหลักน้ำเงินเข้มเดิม
    ============================================================ */
 
 @theme {
   --font-sans: var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-th), var(--font-thai), ui-sans-serif, system-ui, sans-serif;
 
-  --color-background: #f8fafc;
-  --color-foreground: #0f172a;
+  --color-background: #ffffff;
+  --color-foreground: #111827;
   --color-card: #ffffff;
-  --color-card-foreground: #0f172a;
+  --color-card-foreground: #111827;
   --color-primary: #1e3a8a;
   --color-primary-foreground: #ffffff;
-  --color-secondary: #f1f5f9;
-  --color-secondary-foreground: #0f172a;
-  --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
-  --color-border: #e2e8f0;
-  --color-input: #cbd5e1;
+  --color-secondary: #f3f4f6;
+  --color-secondary-foreground: #111827;
+  --color-muted: #f3f4f6;
+  --color-muted-foreground: #4b5563;
+  --color-border: #e5e7eb;
+  --color-input: #9ca3af;
   --color-ring: #1e3a8a;
   --color-destructive: #b91c1c;
   --color-success: #15803d;
 
   --color-success-bg: #dcfce7;
-  --color-success-fg: #166534;
+  --color-success-fg: #15803d;
   --color-warning-bg: #fef3c7;
   --color-warning-fg: #92400e;
   --color-danger-bg: #fee2e2;
-  --color-danger-fg: #991b1b;
+  --color-danger-fg: #b91c1c;
 
   /* แถบสถานะโครงการ */
   --color-status-normal: #15803d;
   --color-status-watch: #d97706;
   --color-status-alert: #b91c1c;
+
+  /* มุมเหลี่ยมทั้งระบบ (rounded-lg, rounded-xl ที่ใช้ทั่วโค้ดกลายเป็น 4px) */
+  --radius-xs: 2px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
 }
 
 html {
@@ -56,6 +67,19 @@ textarea {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* หัวข้อใช้ฟอนต์ตัวเหลี่ยม Bai Jamjuree ให้ต่างจากเนื้อความและอ่านตัวเลขใหญ่ชัด */
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.005em;
+}
+h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
 @media print {

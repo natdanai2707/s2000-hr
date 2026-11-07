@@ -48,7 +48,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <Link
             key={f.key}
             href={f.key === 'active' ? '/' : `/?show=${f.key}`}
-            className={cn('rounded-full border px-3 py-1', f.key === filter.key ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-card')}
+            className={cn('inline-flex h-10 items-center rounded border px-3 font-medium', f.key === filter.key ? 'bg-primary text-primary-foreground border-primary' : 'border-input bg-background hover:bg-muted')}
           >
             {f.label}
           </Link>

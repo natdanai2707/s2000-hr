@@ -27,15 +27,15 @@ export function PageHeader({
   more?: ReactNode
 }) {
   return (
-    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b-2 border-foreground pb-3">
       <div className="min-w-0">
         {backHref && (
-          <Link href={backHref} className="text-xs text-muted-foreground hover:underline">
-            ย้อนกลับ
+          <Link href={backHref} className="mb-1 inline-flex h-8 items-center text-sm font-medium text-primary hover:underline">
+            ‹ ย้อนกลับ
           </Link>
         )}
-        <h1 className="text-xl font-semibold leading-tight">{title}</h1>
-        {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
+        <h1 className="text-2xl font-bold leading-tight">{title}</h1>
+        {subtitle && <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>}
       </div>
       {(actions || more) && (
         <div className="flex w-full flex-wrap gap-2 no-print md:w-auto [&>a]:flex-1 [&>button]:flex-1 md:[&>a]:flex-none md:[&>button]:flex-none">
@@ -53,19 +53,27 @@ export function Money({ value, className }: { value: unknown; className?: string
 
 export function EmptyState({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-border bg-card px-6 py-10 text-center">
-      <p className="text-sm font-medium">{title}</p>
-      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
+    <div className="border-y border-border px-4 py-10 text-center">
+      <p className="font-semibold">{title}</p>
+      {hint && <p className="text-sm text-muted-foreground mt-1">{hint}</p>}
       {action && <div className="mt-4 flex justify-center">{action}</div>}
     </div>
   )
 }
 
+// ตัวเลขหลักของหน้า: เส้นทึบด้านบน ชื่อเล็ก ตัวเลขใหญ่ฟอนต์หัวข้อ ไม่ใส่กรอบ สีเฉพาะค่าที่ต้องจัดการ
 export function Stat({ label, value, sub, tone }: { label: string; value: ReactNode; sub?: ReactNode; tone?: 'danger' | 'success' | 'warning' }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn('text-lg font-semibold tabular mt-0.5', tone === 'danger' && 'text-danger-fg', tone === 'success' && 'text-success-fg', tone === 'warning' && 'text-warning-fg')}>
+    <div className="border-t-2 border-foreground pt-2 pb-1">
+      <div className="text-[13px] font-medium text-muted-foreground leading-snug">{label}</div>
+      <div
+        className={cn(
+          'font-display text-[22px] font-bold leading-tight tabular mt-0.5 break-words',
+          tone === 'danger' && 'text-danger-fg',
+          tone === 'success' && 'text-success-fg',
+          tone === 'warning' && 'text-warning-fg'
+        )}
+      >
         {value}
       </div>
       {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
@@ -92,10 +100,10 @@ export function StatusBadge({ kind, status }: { kind: 'pr' | 'po' | 'invoice' | 
 export function FormField({ label, children, hint, error }: { label: string; children: ReactNode; hint?: string; error?: string | null }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-sm font-medium">{label}</label>
+      <label className="block text-sm font-semibold">{label}</label>
       {children}
       {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p className="text-xs text-danger-fg">{error}</p>}
+      {error && <p className="text-xs font-medium text-danger-fg">{error}</p>}
     </div>
   )
 }

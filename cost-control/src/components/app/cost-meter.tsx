@@ -18,9 +18,9 @@ export function CostMeter({ pct, tone, size = 'sm', showLabel = true }: { pct: n
         aria-valuemax={100}
         aria-valuenow={Math.round(pct)}
         aria-label={`ต้นทุนใช้ไป ${formatPct(pct)} ของงบ`}
-        className={cn('w-full overflow-hidden rounded-full', TRACK[tone], size === 'lg' ? 'h-3' : 'h-2')}
+        className={cn('w-full overflow-hidden', TRACK[tone], size === 'lg' ? 'h-3' : 'h-2')}
       >
-        <div className={cn('h-full rounded-full', FILL[tone])} style={{ width: `${width}%` }} />
+        <div className={cn('h-full', FILL[tone])} style={{ width: `${width}%` }} />
       </div>
       {showLabel && (
         <div className="mt-1 flex items-center justify-between text-xs">
