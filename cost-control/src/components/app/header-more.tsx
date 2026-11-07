@@ -12,7 +12,7 @@ export function HeaderMore({ children }: { children: ReactNode }) {
         type="button"
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
-        className="md:hidden inline-flex h-11 items-center justify-center rounded-lg border border-input bg-background px-4 text-sm font-medium"
+        className="md:hidden inline-flex h-12 items-center justify-center rounded border border-input bg-background px-4 text-sm font-semibold hover:bg-muted"
       >
         {open ? 'ปิดเมนู' : 'เพิ่มเติม'}
       </button>

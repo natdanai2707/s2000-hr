@@ -12,6 +12,7 @@ import { BoqCostTable } from '@/components/app/boq-cost-table'
 import { MembersPanel } from '@/components/app/members-panel'
 import { statusTone } from '@/components/app/project-card'
 import { DeleteProjectButton } from '@/components/app/delete-project-button'
+import { FinishProjectButton } from '@/components/app/finish-project-button'
 import { EditBoqButton } from '@/components/app/edit-boq-button'
 import { cn } from '@/lib/utils'
 
@@ -67,6 +68,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               <EditBoqButton projectId={id} confirmedVersionId={user.profile.role === 'management' || user.profile.role === 'admin' ? s.confirmed_version_id : null} />
             )}
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/boq/import`}>นำเข้า BOQ</Link></Button>}
+            {canManage && s.status !== 'closed' && (
+              <FinishProjectButton
+                projectId={id}
+                contract={toNumber(s.contract_value)}
+                actualCost={toNumber(s.actual)}
+                outstanding={toNumber(receivable?.outstanding)}
+                retentionHeld={toNumber(receivable?.retention_held)}
+              />
+            )}
             {canManage && <Button asChild variant="outline"><Link href={`/projects/${id}/edit`}>แก้ไขโครงการ</Link></Button>}
             {(user.profile.role === 'management' || user.profile.role === 'admin') && (
               <DeleteProjectButton projectId={id} projectCode={s.code} />
@@ -83,7 +93,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </span>
         <span className="text-muted-foreground">
           {s.start_date ? formatThaiDate(s.start_date) : '-'} ถึง {s.planned_end_date ? formatThaiDate(s.planned_end_date) : '-'}
-          {s.days_remaining !== null && ` (${s.days_remaining < 0 ? `เกิน ${Math.abs(s.days_remaining)} วัน` : `เหลือ ${s.days_remaining} วัน`})`}
+          {s.actual_end_date
+            ? ` · เสร็จจริง ${formatThaiDate(s.actual_end_date)}${lateDays(s.planned_end_date, s.actual_end_date)}`
+            : s.days_remaining !== null && ` (${s.days_remaining < 0 ? `เกิน ${Math.abs(s.days_remaining)} วัน` : `เหลือ ${s.days_remaining} วัน`})`}
         </span>
       </div>
 
@@ -197,4 +209,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
     </div>
   )
+}
+
+// เทียบวันที่เสร็จจริงกับกำหนดเสร็จ
+function lateDays(planned: string | null, actual: string): string {
+  if (!planned) return ''
+  const d = Math.round((Date.parse(actual) - Date.parse(planned)) / 86400000)
+  return d > 0 ? ` (ช้ากว่ากำหนด ${d} วัน)` : d < 0 ? ` (เร็วกว่ากำหนด ${-d} วัน)` : ' (ตามกำหนด)'
 }

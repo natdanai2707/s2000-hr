@@ -31,7 +31,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     billQ,
     recQ,
     sumQ,
-    supabase.from('projects').select('id, code, name, contract_value, retention_pct, status').in('status', ['active', 'closing', 'draft']).order('code'),
+    supabase.from('projects').select('id, code, name, contract_value, retention_pct, status').in('status', ['active', 'closing', 'draft', 'closed']).order('code'),
   ])
 
   const projects: BillingProject[] = (projectRows ?? []).map(p => ({

@@ -62,6 +62,7 @@ export async function updateProject(projectId: string, fd: FormData): Promise<Ac
     contract_value: num(fd, 'contract_value'),
     start_date: dateOrNull(fd, 'start_date'),
     planned_end_date: dateOrNull(fd, 'planned_end_date'),
+    actual_end_date: dateOrNull(fd, 'actual_end_date'),
     retention_pct: num(fd, 'retention_pct'),
     penalty_per_day: num(fd, 'penalty_per_day'),
   }
@@ -152,5 +153,22 @@ export async function deleteProject(projectId: string, confirmCode: string): Pro
 
   revalidatePath('/projects')
   revalidatePath('/')
+  return { ok: true, data: undefined }
+}
+
+// จบงาน: บันทึกวันที่งานเสร็จจริง และเลือกว่ายังรอเก็บเงิน (กำลังปิด) หรือปิดโครงการเลย
+// เปิดกลับได้ที่หน้าแก้ไขโครงการ เปลี่ยนสถานะเป็นกำลังดำเนินการ
+export async function finishProject(projectId: string, status: 'closing' | 'closed', actualEndDate: string): Promise<ActionResult> {
+  await requireUser()
+  if (status !== 'closing' && status !== 'closed') return fail('สถานะไม่ถูกต้อง')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(actualEndDate)) return fail('กรุณาระบุวันที่งานเสร็จ')
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('projects').update({ status, actual_end_date: actualEndDate }).eq('id', projectId).select('id')
+  if (error) return fail(error)
+  if (!data || data.length === 0) return fail('ไม่มีสิทธิ์แก้ไขโครงการนี้ หรือไม่พบโครงการ')
+  revalidatePath(`/projects/${projectId}`)
+  revalidatePath('/projects')
+  revalidatePath('/')
+  revalidatePath('/billing')
   return { ok: true, data: undefined }
 }

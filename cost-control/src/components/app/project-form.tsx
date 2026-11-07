@@ -87,6 +87,11 @@ export function ProjectForm({ branches, project }: { branches: Branch[]; project
         <FormField label="กำหนดเสร็จ">
           <DateInput name="planned_end_date" defaultValue={project?.planned_end_date ?? ''} />
         </FormField>
+        {project && (
+          <FormField label="วันที่งานเสร็จจริง" hint="เว้นว่างถ้างานยังไม่เสร็จ">
+            <DateInput name="actual_end_date" defaultValue={project.actual_end_date ?? ''} />
+          </FormField>
+        )}
         <FormField label="ค่าปรับต่อวัน (บาท)">
           <Input name="penalty_per_day" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={project?.penalty_per_day ?? 0} />
         </FormField>

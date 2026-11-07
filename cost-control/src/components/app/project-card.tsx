@@ -57,7 +57,9 @@ export function ProjectCard({ project: p }: { project: ProjectSummary }) {
           <dt className="text-xs text-muted-foreground">กำหนดเสร็จ</dt>
           <dd className="tabular font-medium">
             {p.planned_end_date ? formatThaiDate(p.planned_end_date) : '-'}
-            {days !== null && days !== undefined && (
+            {p.actual_end_date ? (
+              <span className="ml-1 text-xs text-muted-foreground">(เสร็จแล้ว)</span>
+            ) : days !== null && days !== undefined && (
               <span className={cn('ml-1 text-xs', days < 0 ? 'text-danger-fg' : 'text-muted-foreground')}>
                 ({days < 0 ? `เกิน ${Math.abs(days)} วัน` : `เหลือ ${days} วัน`})
               </span>
