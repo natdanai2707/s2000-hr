@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/cleanup-selfies",
       "schedule": "0 3 1 * *"
+    },
+    {
+      "path": "/api/cron/keep-alive",
+      "schedule": "0 6 */3 * *"
     }
   ]
 }
