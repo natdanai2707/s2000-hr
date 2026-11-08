@@ -7,6 +7,8 @@ import { supabase } from '@/lib/supabase'
 import { LeaveRequest } from '@/lib/types'
 import { monthRange, eachDateInclusive } from '@/lib/date'
 import { StatusChip, BottomNav, EmptyState } from '@/components/ui'
+import { Icon } from '@/components/icons'
+import type { IconName } from '@/components/icons'
 
 interface DayData {
   hasWorkLog: boolean
@@ -338,12 +340,21 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
-        <div>
-          <h1 className="text-base font-semibold text-gray-800">S-2000</h1>
-          <p className="text-xs text-gray-500">{session.user.employeeName} · {session.user.position}</p>
+      <div className="bg-white border-b border-gray-100 px-4 py-2.5 flex items-center gap-3 sticky top-0 z-20">
+        <div className="w-10 h-10 rounded-full bg-brand-600 text-white flex items-center justify-center font-semibold shrink-0">
+          {(session.user.employeeName || 'S').trim().charAt(0)}
         </div>
-        <button onClick={() => signOut({ callbackUrl: '/login' })} className="text-xs text-gray-400">ออกจากระบบ</button>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-800 truncate leading-tight">{session.user.employeeName}</p>
+          <p className="text-xs text-gray-400 truncate">{session.user.position}</p>
+        </div>
+        <button
+          onClick={() => signOut({ callbackUrl: '/login' })}
+          aria-label="ออกจากระบบ"
+          className="tap-target text-gray-400 rounded-lg hover:bg-gray-100 hover:text-gray-600"
+        >
+          <Icon name="logout" width={20} height={20} />
+        </button>
       </div>
 
       <div className="max-w-lg mx-auto px-3 py-3 pb-24 space-y-4">
@@ -358,9 +369,9 @@ export default function DashboardPage() {
         {/* ปฏิทิน */}
         <div className="bg-white rounded-2xl p-3 shadow-sm">
           <div className="flex items-center justify-between mb-2 px-1">
-            <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 text-lg leading-none">‹</button>
+            <button onClick={prevMonth} aria-label="เดือนก่อน" className="tap-target rounded-lg hover:bg-gray-100 text-gray-500"><Icon name="chevronLeft" width={20} height={20} /></button>
             <span className="font-semibold text-gray-800 text-sm">{thaiMonths[viewMonth]} {viewYear + 543}</span>
-            <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 text-lg leading-none">›</button>
+            <button onClick={nextMonth} aria-label="เดือนถัดไป" className="tap-target rounded-lg hover:bg-gray-100 text-gray-500"><Icon name="chevronRight" width={20} height={20} /></button>
           </div>
 
           <div className="grid grid-cols-7 mb-1">
@@ -462,62 +473,39 @@ export default function DashboardPage() {
         )}
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-3 gap-2">
-          <button onClick={() => router.push('/leave/new')} className="bg-[#06C755] text-white rounded-xl p-3 text-left">
-            <div className="text-xl mb-1">📋</div>
-            <div className="font-medium text-xs">ยื่นคำขอลา</div>
-            <div className="text-xs opacity-70 mt-0.5">ลา/มาสาย/ขาด</div>
-          </button>
-          <button onClick={() => router.push('/worklog/new')} className="bg-blue-600 text-white rounded-xl p-3 text-left">
-            <div className="text-xl mb-1">🔧</div>
-            <div className="font-medium text-xs">บันทึกงาน</div>
-            <div className="text-xs opacity-70 mt-0.5">รายงานการปฏิบัติงาน</div>
-          </button>
-          <button onClick={() => router.push('/attendance')} className="bg-orange-500 text-white rounded-xl p-3 text-left">
-            <div className="text-xl mb-1">📍</div>
-            <div className="font-medium text-xs">เช็คอิน/เอาท์</div>
-            <div className="text-xs opacity-70 mt-0.5">บันทึกเวลาเข้า-ออกงาน</div>
-          </button>
-          <button onClick={() => router.push('/ot/new')} className="bg-yellow-500 text-white rounded-xl p-3 text-left">
-            <div className="text-xl mb-1">⏰</div>
-            <div className="font-medium text-xs">ขอทำ OT</div>
-            <div className="text-xs opacity-70 mt-0.5">ยื่นขออนุมัติ OT</div>
-          </button>
-          <button onClick={() => router.push('/requests')} className="bg-gray-600 text-white rounded-xl p-3 text-left">
-            <div className="text-xl mb-1">📜</div>
-            <div className="font-medium text-xs">ประวัติคำขอ</div>
-            <div className="text-xs opacity-70 mt-0.5">ลา / OT / บันทึกงาน</div>
-          </button>
-        </div>
-
-        {/* ทางลัดเพิ่มเติม */}
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => router.push('/payslip')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
-            <span className="text-xl">🧾</span>
-            <div>
-              <p className="font-medium text-xs text-gray-800">สลิปเงินเดือน</p>
-              <p className="text-xs text-gray-400">ดูย้อนหลัง</p>
+        {(() => {
+          const actions: { icon: IconName; label: string; sub: string; href: string; color: string }[] = [
+            { icon: 'clipboard', label: 'ยื่นคำขอลา', sub: 'ลา / มาสาย / ขาด', href: '/leave/new', color: 'bg-emerald-500' },
+            { icon: 'briefcase', label: 'บันทึกงาน', sub: 'รายงานการปฏิบัติงาน', href: '/worklog/new', color: 'bg-blue-500' },
+            { icon: 'mapPin', label: 'เช็คอิน/เอาท์', sub: 'บันทึกเวลาเข้า-ออก', href: '/attendance', color: 'bg-orange-500' },
+            { icon: 'clock', label: 'ขอทำ OT', sub: 'ยื่นขออนุมัติ OT', href: '/ot/new', color: 'bg-amber-500' },
+            { icon: 'fileText', label: 'ประวัติคำขอ', sub: 'ลา / OT / บันทึกงาน', href: '/requests', color: 'bg-slate-500' },
+            { icon: 'receipt', label: 'สลิปเงินเดือน', sub: 'ดูย้อนหลัง', href: '/payslip', color: 'bg-violet-500' },
+            ...(session.user.approverId
+              ? ([
+                  { icon: 'users', label: 'สรุปทีมวันนี้', sub: 'ใครลา/อยู่ไซต์', href: '/team', color: 'bg-sky-500' },
+                  { icon: 'checkCircle', label: 'อนุมัติบันทึกงาน', sub: 'เซ็นรับรองลูกทีม', href: '/worklog/approve', color: 'bg-teal-500' },
+                ] as { icon: IconName; label: string; sub: string; href: string; color: string }[])
+              : []),
+          ]
+          return (
+            <div className="grid grid-cols-2 gap-2.5">
+              {actions.map(a => (
+                <button
+                  key={a.href}
+                  onClick={() => router.push(a.href)}
+                  className="bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm text-left transition active:scale-[0.98] hover:border-gray-200"
+                >
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-white mb-2.5 ${a.color}`}>
+                    <Icon name={a.icon} width={22} height={22} />
+                  </div>
+                  <p className="font-semibold text-sm text-gray-800 leading-tight">{a.label}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{a.sub}</p>
+                </button>
+              ))}
             </div>
-          </button>
-          {session.user.approverId && (
-            <button onClick={() => router.push('/team')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
-              <span className="text-xl">👥</span>
-              <div>
-                <p className="font-medium text-xs text-gray-800">สรุปทีมวันนี้</p>
-                <p className="text-xs text-gray-400">ใครลา/อยู่ไซต์</p>
-              </div>
-            </button>
-          )}
-          {session.user.approverId && (
-            <button onClick={() => router.push('/worklog/approve')} className="bg-white border border-gray-100 rounded-xl p-3 text-left flex items-center gap-2 min-h-14">
-              <span className="text-xl">✅</span>
-              <div>
-                <p className="font-medium text-xs text-gray-800">อนุมัติบันทึกงาน</p>
-                <p className="text-xs text-gray-400">เซ็นรับรองลูกทีม</p>
-              </div>
-            </button>
-          )}
-        </div>
+          )
+        })()}
 
         {/* My Leave Requests */}
         <div>

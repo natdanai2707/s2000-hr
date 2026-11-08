@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation'
 import { ButtonHTMLAttributes, ReactNode } from 'react'
+import { Icon, IconName } from './icons'
 
 /* ============================================================
    S-2000 HR — Shared UI Components
@@ -125,18 +126,18 @@ export function PageHeader({
 }
 
 // ---------- BottomNav (เมนูหลัก แทนการกด back ไปมา) ----------
-const navItems = [
-  { href: '/dashboard', label: 'หน้าหลัก', icon: '🏠' },
-  { href: '/calendar', label: 'ปฏิทิน', icon: '📅' },
-  { href: '/attendance', label: 'เช็คอิน', icon: '📍' },
-  { href: '/requests', label: 'ประวัติ', icon: '📜' },
+const navItems: { href: string; label: string; icon: IconName }[] = [
+  { href: '/dashboard', label: 'หน้าหลัก', icon: 'home' },
+  { href: '/calendar', label: 'ปฏิทิน', icon: 'calendar' },
+  { href: '/attendance', label: 'เช็คอิน', icon: 'mapPin' },
+  { href: '/requests', label: 'ประวัติ', icon: 'fileText' },
 ]
 
 export function BottomNav() {
   const router = useRouter()
   const pathname = usePathname()
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-100 pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur border-t border-gray-100 pb-[env(safe-area-inset-bottom)]">
       <div className="max-w-lg mx-auto grid grid-cols-4">
         {navItems.map(item => {
           const active = pathname === item.href
@@ -144,11 +145,11 @@ export function BottomNav() {
             <button
               key={item.href}
               onClick={() => router.push(item.href)}
-              className={`flex flex-col items-center justify-center gap-0.5 min-h-14 py-1.5 transition ${
+              className={`flex flex-col items-center justify-center gap-1 min-h-14 py-1.5 transition ${
                 active ? 'text-brand-600' : 'text-gray-400'
               }`}
             >
-              <span className="text-xl leading-none">{item.icon}</span>
+              <Icon name={item.icon} width={23} height={23} strokeWidth={active ? 2.2 : 1.9} />
               <span className={`text-[11px] ${active ? 'font-semibold' : ''}`}>{item.label}</span>
             </button>
           )
@@ -157,3 +158,4 @@ export function BottomNav() {
     </nav>
   )
 }
+
