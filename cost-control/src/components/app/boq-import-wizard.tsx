@@ -49,6 +49,9 @@ export function BoqImportWizard({
   const [contractText, setContractText] = useState<string | null>(null)
   const [applyContract, setApplyContract] = useState(true)
   const [ackIssues, setAckIssues] = useState(false)
+  // ไฟล์แนบมาจากหน้าเปิดงาน: ไม่ต้องเลือกไฟล์ซ้ำ แสดงสถานะการอ่านแทนช่องเลือกไฟล์ จนกว่าผู้ใช้จะขอเปลี่ยนไฟล์
+  const [changingFile, setChangingFile] = useState(false)
+  const showPicker = !initialFile || changingFile
 
   async function upload(fd: FormData) {
     setPending(true)
@@ -76,10 +79,7 @@ export function BoqImportWizard({
 
   async function onUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const picked = fd.get('file')
-    if (initialFile && (!(picked instanceof File) || picked.size === 0)) fd.set('file', initialFile)
-    await upload(fd)
+    await upload(new FormData(e.currentTarget))
   }
 
   const autoRead = useRef(false)
@@ -171,15 +171,47 @@ export function BoqImportWizard({
             <Input value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น BOQ ฉบับลงนาม" />
           </FormField>
         </div>
-        <FormField label={initialFile ? `ไฟล์ BOQ: ${initialFile.name} (เลือกไฟล์ใหม่ถ้าต้องการเปลี่ยน)` : 'ไฟล์ BOQ (.xlsx)'} hint="รองรับหลายชีต แถวหัวข้อหมวดที่ไม่มีปริมาณจะกลายเป็นหมวด แถวที่มีราคาวัสดุและแรงงานแยกกันจะแตกเป็น 2 รายการ">
-          <Input type="file" name="file" accept=".xlsx" required={!initialFile} />
-        </FormField>
+        {showPicker ? (
+          <FormField label="ไฟล์ BOQ (.xlsx)" hint="รองรับหลายชีต แถวหัวข้อหมวดที่ไม่มีปริมาณจะกลายเป็นหมวด แถวที่มีราคาวัสดุและแรงงานแยกกันจะแตกเป็น 2 รายการ">
+            <Input type="file" name="file" accept=".xlsx" required />
+          </FormField>
+        ) : (
+          <div className="rounded border-l-4 border-l-primary bg-muted/50 px-3 py-3 space-y-2">
+            <div className="text-sm font-semibold break-all">ไฟล์ BOQ: {initialFile!.name}</div>
+            {pending ? (
+              <p className="text-sm animate-pulse">กำลังอ่านไฟล์ที่แนบมา ใช้เวลาประมาณ 30 วินาทีถึง 1 นาที ไม่ต้องอัปโหลดใหม่ อย่าออกจากหน้านี้</p>
+            ) : preview ? (
+              <p className="text-sm">อ่านไฟล์แล้ว ตรวจรายการด้านล่าง แล้วกดนำเข้าที่ท้ายหน้า</p>
+            ) : (
+              <p className="text-sm text-danger-fg">อ่านไฟล์ไม่สำเร็จ กดอ่านใหม่ หรือเลือกไฟล์อื่น</p>
+            )}
+            {!pending && (
+              <div className="flex flex-wrap gap-2">
+                {!preview && (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      const fd = new FormData()
+                      fd.set('file', initialFile!)
+                      void upload(fd)
+                    }}
+                  >
+                    อ่านใหม่
+                  </Button>
+                )}
+                <Button type="button" variant="outline" onClick={() => setChangingFile(true)}>เลือกไฟล์อื่น</Button>
+              </div>
+            )}
+          </div>
+        )}
         {type === 'variation_order' && (
           <Alert tone="info">VO จะ copy รายการทั้งหมดจาก BOQ ที่ยืนยันแล้ว รายการในไฟล์ (ถ้ามี) จะถูกเพิ่มต่อท้าย จากนั้นแก้ไขเพิ่มลดเฉพาะรายการที่เปลี่ยนในหน้าถัดไป ไฟล์ไม่บังคับสำหรับ VO</Alert>
         )}
-        <div className="flex justify-end">
-          <Button type="submit" disabled={pending}>{pending ? 'กำลังอ่านไฟล์' : 'อัปโหลดและดูตัวอย่าง'}</Button>
-        </div>
+        {showPicker && (
+          <div className="flex justify-end">
+            <Button type="submit" disabled={pending}>{pending ? 'กำลังอ่านไฟล์' : 'อัปโหลดและดูตัวอย่าง'}</Button>
+          </div>
+        )}
       </form>
 
       {preview && (

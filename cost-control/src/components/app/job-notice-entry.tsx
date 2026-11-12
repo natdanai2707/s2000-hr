@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { readJobNotice, openJob, type JobNoticeDraft, type JobNoticePerson, type ProfileOption } from '@/actions/job-notice'
@@ -23,7 +23,8 @@ const SAMPLE = `แจ้ง เปิด Job/เพิ่มแผนก
 
 // เปิดงานจากข้อความแจ้งในกลุ่ม LINE: วางข้อความ แนบ BOQ ระบบกรอกให้ ตรวจแล้วกดเปิดงาน
 // แนบ BOQ มาด้วย เปิดงานเสร็จจะอ่านไฟล์ต่อทันที มูลค่าสัญญามาจาก BOQ ตอนนำเข้า
-export function JobNoticeEntry({ branches, profiles }: { branches: { id: string; code: string; name: string }[]; profiles: ProfileOption[] }) {
+// manual: ฟอร์มกรอกเอง แสดงเฉพาะก่อนเปิดงาน
+export function JobNoticeEntry({ branches, profiles, manual }: { branches: { id: string; code: string; name: string }[]; profiles: ProfileOption[]; manual?: ReactNode }) {
   const router = useRouter()
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -90,8 +91,9 @@ export function JobNoticeEntry({ branches, profiles }: { branches: { id: string;
     return (
       <div className="space-y-4">
         <Alert tone="success">
-          เปิดงาน <span className="font-semibold">{code} {name}</span> แล้ว{' '}
-          <Link className="underline" href={`/projects/${opened.id}`}>ไปหน้าโครงการ</Link>
+          เปิดงาน <span className="font-semibold">{code} {name}</span> แล้ว
+          {file ? ' ขั้นต่อไป ระบบกำลังอ่าน BOQ ที่แนบมาให้ด้านล่าง ไม่ต้องอัปโหลดใหม่' : ' '}
+          {!file && <Link className="underline" href={`/projects/${opened.id}`}>ไปหน้าโครงการ</Link>}
         </Alert>
         {opened.warning && <Alert tone="warning">{opened.warning}</Alert>}
         {file && (
@@ -193,6 +195,8 @@ export function JobNoticeEntry({ branches, profiles }: { branches: { id: string;
           </div>
         </section>
       )}
+
+      {!draft && manual}
     </div>
   )
 }
