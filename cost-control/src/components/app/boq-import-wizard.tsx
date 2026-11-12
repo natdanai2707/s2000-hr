@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { uploadBoqPreview, importBoq, type UploadPreviewResult } from '@/actions/boq'
 import { BOQ_COLUMN_LABELS, type BoqColumnKey, type ColumnMapping } from '@/lib/boq/split'
@@ -20,7 +20,20 @@ const COLUMN_KEYS: BoqColumnKey[] = [
   'material_cost', 'labor_cost', 'material_total', 'labor_total', 'unit_rate', 'material_cost_total', 'labor_cost_total',
 ]
 
-export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentContract }: { projectId: string; hasConfirmed: boolean; initialType: BoqVersionType; currentContract: number }) {
+// initialFile: ไฟล์ที่แนบมาตั้งแต่หน้าเปิดงาน อ่านให้ทันทีโดยไม่ต้องเลือกไฟล์ซ้ำ
+export function BoqImportWizard({
+  projectId,
+  hasConfirmed,
+  initialType,
+  currentContract,
+  initialFile,
+}: {
+  projectId: string
+  hasConfirmed: boolean
+  initialType: BoqVersionType
+  currentContract: number
+  initialFile?: File | null
+}) {
   const router = useRouter()
   const [type, setType] = useState<BoqVersionType>(initialType)
   const [markup, setMarkup] = useState('0')
@@ -37,11 +50,9 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentC
   const [applyContract, setApplyContract] = useState(true)
   const [ackIssues, setAckIssues] = useState(false)
 
-  async function onUpload(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  async function upload(fd: FormData) {
     setPending(true)
     setError(null)
-    const fd = new FormData(e.currentTarget)
     const res = await uploadBoqPreview(projectId, fd)
     setPending(false)
     if (!res.ok) {
@@ -62,6 +73,24 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentC
     setApplyContract(type === 'quotation')
     setAckIssues(false)
   }
+
+  async function onUpload(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const fd = new FormData(e.currentTarget)
+    const picked = fd.get('file')
+    if (initialFile && (!(picked instanceof File) || picked.size === 0)) fd.set('file', initialFile)
+    await upload(fd)
+  }
+
+  const autoRead = useRef(false)
+  useEffect(() => {
+    if (!initialFile || autoRead.current) return
+    autoRead.current = true
+    const fd = new FormData()
+    fd.set('file', initialFile)
+    void upload(fd)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile])
 
   const contractSuggestion = useMemo(() => {
     if (!preview) return null
@@ -142,8 +171,8 @@ export function BoqImportWizard({ projectId, hasConfirmed, initialType, currentC
             <Input value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น BOQ ฉบับลงนาม" />
           </FormField>
         </div>
-        <FormField label="ไฟล์ BOQ (.xlsx)" hint="รองรับหลายชีต แถวหัวข้อหมวดที่ไม่มีปริมาณจะกลายเป็นหมวด แถวที่มีราคาวัสดุและแรงงานแยกกันจะแตกเป็น 2 รายการ">
-          <Input type="file" name="file" accept=".xlsx" required />
+        <FormField label={initialFile ? `ไฟล์ BOQ: ${initialFile.name} (เลือกไฟล์ใหม่ถ้าต้องการเปลี่ยน)` : 'ไฟล์ BOQ (.xlsx)'} hint="รองรับหลายชีต แถวหัวข้อหมวดที่ไม่มีปริมาณจะกลายเป็นหมวด แถวที่มีราคาวัสดุและแรงงานแยกกันจะแตกเป็น 2 รายการ">
+          <Input type="file" name="file" accept=".xlsx" required={!initialFile} />
         </FormField>
         {type === 'variation_order' && (
           <Alert tone="info">VO จะ copy รายการทั้งหมดจาก BOQ ที่ยืนยันแล้ว รายการในไฟล์ (ถ้ามี) จะถูกเพิ่มต่อท้าย จากนั้นแก้ไขเพิ่มลดเฉพาะรายการที่เปลี่ยนในหน้าถัดไป ไฟล์ไม่บังคับสำหรับ VO</Alert>
