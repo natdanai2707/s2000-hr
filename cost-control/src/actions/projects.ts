@@ -53,9 +53,13 @@ export async function updateProject(projectId: string, fd: FormData): Promise<Ac
   const supabase = await createClient()
   const name = str(fd, 'name')
   if (!name) return fail('กรุณากรอกชื่อโครงการ')
+  // รหัสโครงการแก้ได้ เอกสารทั้งหมดผูกกับ id ของโครงการ ไม่ได้ผูกกับรหัส
+  const code = str(fd, 'code').toUpperCase()
+  if (!code) return fail('กรุณากรอกรหัสโครงการ')
 
   const status = str(fd, 'status')
   const patch: Record<string, unknown> = {
+    code,
     name,
     customer_name: str(fd, 'customer_name') || null,
     branch_id: str(fd, 'branch_id'),
@@ -71,7 +75,7 @@ export async function updateProject(projectId: string, fd: FormData): Promise<Ac
 
   // ต้องเช็คว่ามีแถวกลับมาจริง เพราะถ้า RLS ปฏิเสธ Supabase จะไม่คืน error แต่ไม่มีอะไรถูกแก้
   const { data, error } = await supabase.from('projects').update(patch).eq('id', projectId).select('id')
-  if (error) return fail(error)
+  if (error) return fail(error.code === '23505' ? `รหัสโครงการ ${code} มีอยู่แล้ว ใช้รหัสอื่น` : error)
   if (!data || data.length === 0) return fail('ไม่มีสิทธิ์แก้ไขโครงการนี้ หรือไม่พบโครงการ')
 
   revalidatePath(`/projects/${projectId}`)

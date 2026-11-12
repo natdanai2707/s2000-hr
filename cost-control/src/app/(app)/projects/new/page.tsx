@@ -18,15 +18,18 @@ export default async function NewProjectPage() {
   return (
     <div className="max-w-4xl">
       <PageHeader title="สร้างโครงการ" subtitle="วางข้อความแจ้งเปิด Job พร้อมแนบ BOQ หรือกรอกเองทีละช่อง" backHref="/projects" />
-      <JobNoticeEntry branches={branches ?? []} profiles={(profiles ?? []) as ProfileOption[]} />
-      <div className="max-w-2xl">
-        <details className="mt-6 rounded border border-border bg-card">
-          <summary className="flex min-h-12 cursor-pointer items-center px-4 font-semibold">กรอกเองทีละช่อง</summary>
-          <div className="border-t border-border p-4">
-            <ProjectForm branches={branches ?? []} />
-          </div>
-        </details>
-      </div>
+      <JobNoticeEntry
+        branches={branches ?? []}
+        profiles={(profiles ?? []) as ProfileOption[]}
+        manual={
+          <details className="mt-6 rounded border border-border bg-card">
+            <summary className="flex min-h-12 cursor-pointer items-center px-4 font-semibold">กรอกเองทีละช่อง</summary>
+            <div className="border-t border-border p-4">
+              <ProjectForm branches={branches ?? []} />
+            </div>
+          </details>
+        }
+      />
     </div>
   )
 }
