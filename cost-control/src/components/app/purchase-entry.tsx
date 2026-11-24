@@ -13,6 +13,35 @@ import { Alert } from '@/components/ui/alert'
 import { PrForm, type PrFormProject } from './pr-form'
 import { PurchaseDocumentPicker, PurchaseDocumentSummary, prepareFile } from './purchase-document-reader'
 import { useToast } from './toast'
+import { cn } from '@/lib/utils'
+
+type BadgeTone = 'info' | 'success' | 'warning' | 'danger' | 'done'
+const BADGE: Record<BadgeTone, string> = {
+  info: 'bg-brand-tint text-primary',
+  success: 'bg-success-bg text-success-fg',
+  warning: 'bg-warning-bg text-warning-fg',
+  danger: 'bg-danger-bg text-danger-fg',
+  done: 'bg-muted text-muted-foreground',
+}
+const CARD_EDGE: Record<BadgeTone, string> = {
+  info: 'border-l-[#93a5d1]',
+  success: 'border-l-status-normal',
+  warning: 'border-l-status-watch',
+  danger: 'border-l-status-alert',
+  done: 'border-l-input',
+}
+
+// ป้ายสถานะของเอกสารแต่ละใบ ดูแวบเดียวรู้ว่าใบไหนบันทึกได้เลย ใบไหนต้องตรวจ
+function docBadge(d: DocEntry): { label: string; tone: BadgeTone } {
+  if (d.status === 'queued') return { label: 'รอคิว', tone: 'info' }
+  if (d.status === 'reading') return { label: 'กำลังอ่าน', tone: 'info' }
+  if (d.status === 'saved') return { label: 'บันทึกแล้ว', tone: 'done' }
+  if (d.status === 'error') return { label: 'อ่านไม่สำเร็จ', tone: 'danger' }
+  if (d.status === 'unassigned') return { label: 'เลือกโครงการ', tone: 'warning' }
+  const r = d.result
+  const checks = (r?.issues.length ?? 0) + (r?.lines.filter(l => !l.boq_item_id).length ?? 0) + (r?.read_error ? 1 : 0)
+  return checks ? { label: `ต้องตรวจ ${checks} จุด`, tone: 'warning' } : { label: 'พร้อมบันทึก', tone: 'success' }
+}
 
 type Status = 'queued' | 'reading' | 'ready' | 'unassigned' | 'error' | 'saved'
 
@@ -144,33 +173,49 @@ export function PurchaseEntry({
         <PrForm projects={projects} suppliers={suppliers} settings={settings} initialProjectId={initialProjectId} directMode={directMode} />
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="text-muted-foreground">
-              เอกสาร {docs.length} ใบ{busy ? ` · กำลังอ่าน ${busy} ใบ` : ''} · บันทึกแล้ว {savedCount} ใบ
-            </span>
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="font-semibold">เอกสาร {docs.length} ใบ</span>
+              <span className="text-muted-foreground">
+                อ่านแล้ว {docs.length - busy}{busy ? ` · กำลังอ่าน ${busy}` : ''} · บันทึกแล้ว {savedCount}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-border" aria-hidden="true">
+              <div className="h-full bg-primary transition-all" style={{ width: `${((docs.length - busy) / docs.length) * 100}%` }} />
+            </div>
             {busy === 0 && (
-              <Button type="button" size="sm" variant="ghost" onClick={() => setDocs([])}>
-                {savedCount === docs.length ? 'เริ่มชุดใหม่' : 'ล้างทั้งหมด'}
-              </Button>
+              <div className="flex justify-end">
+                <Button type="button" size="sm" variant="ghost" onClick={() => setDocs([])}>
+                  {savedCount === docs.length ? 'เริ่มชุดใหม่' : 'ล้างทั้งหมด'}
+                </Button>
+              </div>
             )}
           </div>
 
           {docs.map((d, idx) => (
-            <section key={d.key} id={`doc-${d.key}`} className="scroll-mt-16 rounded-xl border-2 border-border p-3 space-y-3">
+            <section key={d.key} id={`doc-${d.key}`} aria-busy={d.status === 'queued' || d.status === 'reading'} className={cn('scroll-mt-16 space-y-3 rounded-md border border-l-4 border-border bg-card p-3', CARD_EDGE[docBadge(d).tone])}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="font-semibold">ใบที่ {idx + 1}</div>
-                  <div className="text-xs text-muted-foreground truncate">{d.name}</div>
+                  <div className="truncate text-xs text-muted-foreground">ใบที่ {idx + 1}{d.result?.document_no ? ` · ${d.result.document_no}` : ''}</div>
+                  <div className="truncate text-base font-bold">{d.result?.supplier_name || d.name}</div>
                 </div>
-                {(d.status === 'ready' || d.status === 'unassigned' || d.status === 'error') && (
-                  <Button type="button" size="sm" variant="ghost" onClick={() => remove(d.key)}>
-                    ลบ
-                  </Button>
-                )}
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className={cn('whitespace-nowrap rounded-sm px-2 py-0.5 text-xs font-bold', BADGE[docBadge(d).tone])}>{docBadge(d).label}</span>
+                  {(d.status === 'ready' || d.status === 'unassigned' || d.status === 'error') && (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => remove(d.key)}>
+                      ลบ
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {(d.status === 'queued' || d.status === 'reading') && (
-                <p className="text-sm text-muted-foreground">{d.status === 'queued' ? 'รอคิวอ่าน' : 'กำลังอ่านเอกสาร ใช้เวลาประมาณ 30 วินาทีถึง 1 นาที'}</p>
+                <div className="space-y-2">
+                  <div className="h-3.5 w-3/5 animate-pulse rounded bg-border" />
+                  <div className="h-3 w-4/5 animate-pulse rounded bg-muted" />
+                  <div className="h-3 w-2/5 animate-pulse rounded bg-muted" />
+                  <p className="text-[13px] text-muted-foreground">{d.status === 'queued' ? 'รอคิวอ่าน' : 'กำลังอ่าน ใช้เวลาประมาณ 30 วินาทีถึง 1 นาที บันทึกใบอื่นระหว่างรอได้'}</p>
+                </div>
               )}
 
               {d.status === 'saved' && d.saved && (

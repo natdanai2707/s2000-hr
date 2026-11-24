@@ -57,7 +57,7 @@ describe('โหมดบันทึกซื้อตรง', () => {
 
   it('แถบล่างบนมือถือไม่มีรออนุมัติ และมีครบ 4 ช่อง', () => {
     const direct = visibleFor(BOTTOM_ITEMS, 'management', true)
-    expect(direct.map(i => i.label)).toEqual(['ภาพรวม', 'บันทึกซื้อ', 'รายการซื้อ', 'โครงการ'])
-    expect(visibleFor(BOTTOM_ITEMS, 'engineer', false).map(i => i.href)).toEqual(['/', '/pr/new', '/progress', '/approvals'])
+    expect(direct.map(i => i.label)).toEqual(['หน้าหลัก', 'บันทึกซื้อ', 'รายการซื้อ', 'โครงการ'])
+    expect(visibleFor(BOTTOM_ITEMS, 'engineer', false).map(i => i.href)).toEqual(['/', '/pr/new', '/approvals', '/projects'])
   })
 })

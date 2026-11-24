@@ -5,6 +5,8 @@ import type { PurchaseDocumentResult } from '@/lib/purchase/document-types'
 import { Alert } from '@/components/ui/alert'
 import { formatBaht } from '@/lib/format'
 import { formatThaiDate } from '@/lib/date'
+import { cn } from '@/lib/utils'
+import { Icon } from './icons'
 
 // ย่อรูปในเบราว์เซอร์ก่อนส่ง รูปจากมือถือมักใหญ่เกินที่เซิร์ฟเวอร์รับ และยังแปลง HEIC ของ iPhone เป็น JPG ให้ด้วย
 export async function prepareFile(file: File): Promise<File> {
@@ -56,21 +58,27 @@ export function PurchaseDocumentPicker({ onFiles, count }: { onFiles: (files: Fi
     return () => window.removeEventListener('paste', onPaste)
   }, [])
 
+  const btn = 'flex h-14 cursor-pointer items-center justify-center gap-2 rounded text-base font-bold'
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-      <div>
-        <div className="font-medium">อ่านจากรูปใบสั่งซื้อ</div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          เลือกได้หลายไฟล์ในครั้งเดียว คนละงานก็ได้ ระบบเลือกโครงการให้จากเลข JOB ในเอกสาร แต่ละใบกลายเป็นหนึ่งรายการสั่งซื้อ ตรวจทุกบรรทัดก่อนกดบันทึก
-          <span className="hidden sm:inline"> หรือ copy รูปแล้วกด Ctrl+V ที่หน้านี้ วางทีละรูปหลายครั้งได้</span>
-        </p>
+    <section aria-label="แนบเอกสาร" className="space-y-2.5 rounded-md border-2 border-dashed border-[#93a5d1] bg-card p-4">
+      <div className="grid grid-cols-2 gap-2">
+        {/* ถ่ายรูป: เปิดกล้องหลังบนมือถือทันที เลือกไฟล์: รูปหรือ PDF หลายไฟล์ */}
+        <label className={cn(btn, 'bg-primary text-primary-foreground hover:bg-primary/90')}>
+          <Icon name="camera" size={22} />
+          ถ่ายรูป
+          <input type="file" accept="image/*" capture="environment" onChange={onChange} className="sr-only" />
+        </label>
+        <label className={cn(btn, 'border border-input bg-card hover:bg-muted')}>
+          <Icon name="paperclip" size={22} />
+          {count ? 'เพิ่มไฟล์' : 'เลือกไฟล์'}
+          <input type="file" accept="image/*,application/pdf" multiple onChange={onChange} className="sr-only" />
+        </label>
       </div>
-      {/* ปุ่มภาษาไทยแทนช่องเลือกไฟล์ของเบราว์เซอร์ บนมือถือกดแล้วเลือกถ่ายรูปหรือเลือกไฟล์ได้ */}
-      <label className="inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-lg border border-input bg-background px-4 text-sm font-medium hover:bg-muted">
-        {count ? 'เพิ่มเอกสาร' : 'ถ่ายรูปหรือเลือกไฟล์'}
-        <input type="file" accept="image/*,application/pdf" multiple onChange={onChange} className="sr-only" />
-      </label>
-    </div>
+      <p className="text-center text-[13px] text-muted-foreground">
+        รูปหรือ PDF ของ PO ใบกำกับภาษี หรือบิลเงินสด แนบได้หลายใบ คละงานได้ ระบบหางานจากเลข JOB
+        <span className="hidden sm:inline"> · copy รูปแล้วกด Ctrl+V ที่หน้านี้ได้</span>
+      </p>
+    </section>
   )
 }
 

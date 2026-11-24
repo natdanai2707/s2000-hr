@@ -38,6 +38,12 @@
   --color-status-normal: #15803d;
   --color-status-watch: #d97706;
   --color-status-alert: #b91c1c;
+  /* พื้นหน้าแอปเทาอ่อน ข้อมูลแต่ละก้อนอยู่บนการ์ดขาว แยกกลุ่มชัดบนมือถือ */
+  --color-canvas: #f4f5f7;
+  --color-sidebar: #172e6e;
+  --color-sidebar-active: #2d4689;
+  --color-sidebar-muted: #b9c6e6;
+  --color-brand-tint: #e8edf8;
 
   /* มุมเหลี่ยมทั้งระบบ (rounded-lg, rounded-xl ที่ใช้ทั่วโค้ดกลายเป็น 4px) */
   --radius-xs: 2px;
