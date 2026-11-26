@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireRole } from '@/lib/auth'
 import { readSheets } from '@/lib/boq/parse'
-import { parseJobNotice, projectNameFromNotice, matchProfile, customerFromCells } from '@/lib/project/job-notice'
+import { parseJobNotice, projectCodeFromNotice, projectNameFromNotice, normalizeProjectCode, matchProfile, customerFromCells } from '@/lib/project/job-notice'
 import { ROLE_LABELS, type UserRole } from '@/lib/types'
 import { fail, type ActionResult } from './types'
 
@@ -58,7 +58,7 @@ export async function readJobNotice(fd: FormData): Promise<ActionResult<JobNotic
   const [{ data: profiles }, { data: branches }, { data: dup }, { data: customers }] = await Promise.all([
     supabase.from('profiles').select('id, full_name, role').eq('is_active', true),
     supabase.from('branches').select('id, code'),
-    supabase.from('projects').select('id, name').eq('code', n.code).maybeSingle(),
+    supabase.from('projects').select('id, name').eq('code', projectCodeFromNotice(n)).maybeSingle(),
     n.customer_hint
       ? supabase.from('projects').select('customer_name').ilike('customer_name', `%${n.customer_hint}%`).limit(20)
       : Promise.resolve({ data: [] as { customer_name: string | null }[] }),
@@ -96,7 +96,7 @@ export async function readJobNotice(fd: FormData): Promise<ActionResult<JobNotic
   return {
     ok: true,
     data: {
-      code: n.code,
+      code: projectCodeFromNotice(n),
       name: projectNameFromNotice(n),
       customer_name: customer ?? n.customer_hint ?? '',
       branch_id: branch?.id ?? '',
@@ -119,7 +119,7 @@ export async function openJob(input: {
   members: { user_id: string; role: UserRole }[]
 }): Promise<ActionResult<{ id: string; warning: string | null }>> {
   const user = await requireRole([...OPENERS])
-  const code = input.code.trim().toUpperCase()
+  const code = normalizeProjectCode(input.code)
   const name = input.name.trim()
   if (!code || !name) return fail('กรุณากรอกรหัสและชื่อโครงการ')
   if (!input.branch_id) return fail('กรุณาเลือกสาขา')

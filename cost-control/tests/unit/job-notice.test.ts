@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseJobNotice, projectNameFromNotice, matchProfile, customerFromCells, cleanName } from '@/lib/project/job-notice'
+import { parseJobNotice, projectCodeFromNotice, projectNameFromNotice, normalizeProjectCode, matchProfile, customerFromCells, cleanName } from '@/lib/project/job-notice'
 
 const SAMPLE = `แจ้ง เปิด Job/เพิ่มแผนก
 - A6911-05(V107) งานพับขั้นบันได (รวินท์)
@@ -14,7 +14,8 @@ describe('ข้อความแจ้งเปิด Job', () => {
     expect(n.version).toBe('V107')
     expect(n.title).toBe('งานพับขั้นบันได')
     expect(n.customer_hint).toBe('รวินท์')
-    expect(projectNameFromNotice(n)).toBe('งานพับขั้นบันได (V107)')
+    expect(projectCodeFromNotice(n)).toBe('A6911-05(V107)')
+    expect(projectNameFromNotice(n)).toBe('งานพับขั้นบันได')
     expect(n.people).toEqual([
       { role: 'project_manager', label: 'ผู้รับผิดชอบ', name: 'ณรงค์ฤทธิ์' },
       { role: 'purchasing', label: 'จัดซื้อ', name: 'สุวรรณญา' },
@@ -31,6 +32,11 @@ describe('ข้อความแจ้งเปิด Job', () => {
       ['project_manager', 'สมชาย'],
       ['site_supervisor', 'ดำ'],
     ])
+  })
+
+  it('ไม่มีเลข V ใช้รหัสงานอย่างเดียว และจัดรูปรหัสที่พิมพ์เอง', () => {
+    expect(projectCodeFromNotice(parseJobNotice('B6912-01 งานโครงหลังคา'))).toBe('B6912-01')
+    expect(normalizeProjectCode(' a6911-07 ( v109 ) ')).toBe('A6911-07(V109)')
   })
 
   it('ตัดอีโมจิ คำนำหน้า และคำลงท้าย', () => {
