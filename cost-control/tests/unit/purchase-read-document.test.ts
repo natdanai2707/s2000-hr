@@ -73,7 +73,7 @@ function fakeSupabase(): SupabaseClient {
 
 const doc = (job: string | null) => ({
   is_purchase_document: true, supplier_name: 'บริษัท ไทยสุราษฎร์สตีล จำกัด', document_no: 'PB6910109', job_reference: job, project_index: null,
-  document_date: '2026-10-20', prices_include_vat: false, subtotal: 204525.88, discount: 0, vat: 14316.81, grand_total: 218842.69,
+  document_date: '2026-10-20', has_vat: true, prices_include_vat: false, subtotal: 204525.88, discount: 0, vat: 14316.81, grand_total: 218842.69,
   lines: [
     { description: 'Roof:TS76029 Zincalume 0.47 TCT.G550,AZ150', qty: 769.88, unit: 'M2', unit_price: 251, line_total: 193239.88, boq_index: null, qty_factor: null, match_note: null },
     { description: 'Flashing,Zincalume,AZ150,0.47mm.BHP.,Girth<626', qty: 59.4, unit: 'M.', unit_price: 190, line_total: 11286, boq_index: null, qty_factor: null, match_note: null },

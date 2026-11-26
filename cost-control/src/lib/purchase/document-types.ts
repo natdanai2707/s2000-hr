@@ -15,6 +15,10 @@ export interface PurchaseDocumentResult {
   document_date: string | null
   grand_total: number | null
   total_excl_vat: number | null
+  // เอกสารไม่มี VAT (ผู้ขายไม่ได้จด VAT) ฟอร์มเริ่มที่ ไม่มี VAT
+  vat_exempt: boolean
+  // ราคาในรายการถูกถอด VAT ออกแล้ว ใช้ตอนผู้ใช้เปลี่ยนเป็นไม่มี VAT จะได้คืนราคาเต็ม
+  vat_removed: boolean
   lines: ReviewedLine[]
   issues: string[]
   notes: string[]

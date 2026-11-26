@@ -29,6 +29,8 @@ export interface QueuedPrPayload {
   note: string | null
   // รูปหรือ PDF ของเอกสารจัดซื้อที่แนบไว้ (อัปโหลดตอนให้ Claude อ่าน)
   attachment_path?: string | null
+  // ผู้ขายไม่ได้จด VAT ราคาในรายการคือราคาจ่ายจริง
+  vat_exempt?: boolean
   lines: PrLinePayload[]
 }
 
@@ -69,6 +71,7 @@ export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<A
       needed_by_date: payload.needed_by_date || null,
       note: payload.note || null,
       client_ref: payload.client_ref || null,
+      vat_exempt: payload.vat_exempt === true,
       // รับเฉพาะไฟล์ใต้โฟลเดอร์ของโครงการนี้
       attachment_path: payload.attachment_path?.startsWith(`projects/${payload.project_id}/purchases/`) ? payload.attachment_path : null,
       created_by: user.id,

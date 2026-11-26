@@ -20,7 +20,7 @@ import type { PurchaseDocumentResult } from '@/lib/purchase/document-types'
 import { formatThaiDate } from '@/lib/date'
 import { suggestConversion, toBoqUnits } from '@/lib/units'
 import { SupplierCombobox } from './supplier-combobox'
-import { addVat } from '@/lib/vat'
+import { addVat, removeVat } from '@/lib/vat'
 import { cn } from '@/lib/utils'
 import { useToast } from './toast'
 
@@ -60,10 +60,13 @@ interface Line {
   doc_note: string
   // null = ให้ระบบเลือก: รายการที่ต้องแก้กางไว้ รายการที่เรียบร้อยพับไว้ ผู้ใช้กดหัวการ์ดเพื่อเปิดปิดเอง
   open: boolean | null
+  // บรรทัดเดียวในเอกสารที่รวมหลายรายการ BOQ แบ่งเป็นหลายการ์ดในกลุ่มเดียวกัน ยอดรวมของกลุ่มต้องเท่ายอดในเอกสาร
+  split_group: string
+  split_total: number | null
 }
 
 function newLine(): Line {
-  return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '', buy_other: false, buy_unit: '', factor: '', doc_desc: '', doc_note: '', open: true }
+  return { key: newClientRef(), boq_item_id: '', search: '', qty: '', unit_price: '', supplier_id: '', supplier_name: '', variance_reason: '', buy_other: false, buy_unit: '', factor: '', doc_desc: '', doc_note: '', open: true, split_group: '', split_total: null }
 }
 
 // null = ซื้อเป็นหน่วยอื่นแต่ยังไม่ระบุตัวแปลง (ผู้ใช้เว้นว่างได้) NaN = กรอกค่าที่ใช้ไม่ได้
@@ -139,6 +142,29 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+// ยอดเงินของการ์ด (ไม่รวม VAT) ใช้กับกลุ่มที่แบ่งจากบรรทัดเดียวในเอกสาร
+function lineAmount(l: Line): number {
+  return round2((Number(l.qty) || 0) * (Number(l.unit_price) || 0))
+}
+
+// ยอดในเอกสาร แบ่งแล้ว และที่เหลือของแต่ละกลุ่ม
+type SplitStat = { total: number; allocated: number; remaining: number; count: number; lastKey: string; tolerance: number }
+function splitStats(lines: Line[]): Map<string, SplitStat> {
+  const out = new Map<string, SplitStat>()
+  for (const l of lines) {
+    if (!l.split_group || l.split_total === null) continue
+    const g = out.get(l.split_group) ?? { total: l.split_total, allocated: 0, remaining: 0, count: 0, lastKey: l.key, tolerance: 1 }
+    g.allocated = round2(g.allocated + lineAmount(l))
+    // ราคาต่อหน่วยเก็บ 2 ตำแหน่ง ยอดรวมจึงคลาดได้ไม่เกินครึ่งสตางค์ต่อหน่วย
+    g.tolerance += (Number(l.qty) || 0) * 0.005
+    g.count += 1
+    g.lastKey = l.key
+    g.remaining = round2(g.total - g.allocated)
+    out.set(l.split_group, g)
+  }
+  return out
+}
+
 // initialDocument = เอกสารที่ Claude อ่านแล้ว ฟอร์มเริ่มจากโครงการและรายการในเอกสาร
 // onSaved = ใช้ในการแนบหลายใบ บันทึกแล้วไม่เปลี่ยนหน้า ให้ผู้ใช้ทำใบถัดไปต่อ
 export function PrForm({
@@ -170,6 +196,20 @@ export function PrForm({
   const [pending, setPending] = useState(false)
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null)
   const [attachmentPath, setAttachmentPath] = useState<string | null>(initialDocument?.attachment_path ?? null)
+  // ผู้ขายไม่ได้จด VAT: ราคาที่กรอกคือราคาจ่ายจริง ไม่มีช่องรวม VAT และยอดรวม VAT เท่ากับยอดจ่าย
+  const [vatExempt, setVatExempt] = useState(initialDocument?.vat_exempt ?? false)
+  // เอกสารที่ระบบถอด VAT ออกจากราคาไปแล้ว ถ้าผู้ใช้บอกว่าไม่มี VAT ให้คืนราคาเป็นยอดจ่ายจริง และกลับกันเมื่อยกเลิก
+  function toggleVatExempt(on: boolean) {
+    setVatExempt(on)
+    if (!initialDocument?.vat_removed) return
+    setLines(ls =>
+      ls.map(l => {
+        const n = Number(l.unit_price)
+        if (l.unit_price === '' || isNaN(n)) return l
+        return { ...l, unit_price: (on ? addVat(n) : removeVat(n)).toFixed(2) }
+      })
+    )
+  }
   const online = useOnline()
   const toast = useToast()
   const formRef = useRef<HTMLFormElement>(null)
@@ -200,6 +240,7 @@ export function PrForm({
     const input = { qty: boq.qty, unitPrice: boq.unitPrice, boqQty: item.qty, boqUnitCost: item.unit_cost, qtyOrdered: item.qty_ordered, isOffBoq: item.is_off_boq, varianceReason: l.variance_reason, unitsUnknown }
     return { line: l, item, ev: evaluateLine(input, settings), boq, input, unitsUnknown }
   })
+  const splits = splitStats(lines)
   const attentionCount = evaluated.filter(e => lineStatus({ item: e.item, ev: e.ev, line: e.line, unitsUnknown: e.unitsUnknown }).attention).length
   const routing = routePurchaseRequest(
     evaluated.filter(e => e.item).map(e => e.input!),
@@ -234,9 +275,49 @@ export function PrForm({
     setLines(ls => ls.map(l => (l.key === key ? { ...l, ...('open' in patch ? {} : { open: l.open ?? true }), ...patch } : l)))
   }
 
+  // แบ่งบรรทัดในเอกสารเข้าหลายรายการ BOQ: เพิ่มการ์ดใหม่ต่อท้าย ชื่อและผู้ขายเดิม ยอดเริ่มต้นเท่าที่ยังเหลือ
+  function splitLine(line: Line) {
+    const total = line.split_total ?? lineAmount(line)
+    if (!(total > 0)) {
+      fail('กรอกปริมาณและราคาของบรรทัดนี้ก่อน ระบบจะใช้ยอดนี้เป็นยอดรวมที่ต้องแบ่ง', line.key)
+      return
+    }
+    const group = line.split_group || line.key
+    setLines(ls => {
+      const marked = ls.map(l => (l.key === line.key || (line.split_group && l.split_group === line.split_group) ? { ...l, split_group: group, split_total: total } : l))
+      const allocated = marked.filter(l => l.split_group === group).reduce((n, l) => n + lineAmount(l), 0)
+      const rest = round2(total - allocated)
+      const fresh: Line = {
+        ...newLine(),
+        split_group: group,
+        split_total: total,
+        doc_desc: line.doc_desc,
+        supplier_id: line.supplier_id,
+        supplier_name: line.supplier_name,
+        qty: rest > 0 ? '1' : '',
+        unit_price: rest > 0 ? rest.toFixed(2) : '',
+      }
+      const lastIdx = marked.map(l => l.split_group).lastIndexOf(group)
+      return [...marked.slice(0, lastIdx + 1), fresh, ...marked.slice(lastIdx + 1)]
+    })
+  }
+
+  // ใส่ยอดที่ยังเหลือของกลุ่มให้การ์ดนี้ ปริมาณคงเดิม คำนวณราคาต่อหน่วยให้
+  function fillRemaining(line: Line, remaining: number) {
+    const qty = Number(line.qty) > 0 ? Number(line.qty) : 1
+    const amount = lineAmount(line) + remaining
+    if (amount < 0) return
+    update(line.key, { qty: String(qty), unit_price: (Math.round((amount / qty) * 100) / 100).toFixed(2) })
+  }
+
   // ข้อผิดพลาดของบรรทัดบอกเลขรายการและ key ไว้ ให้ข้อความเตือนพาไปที่การ์ดนั้นได้
   function buildPayload(): QueuedPrPayload | { error: string; key?: string } {
     if (!projectId) return { error: 'กรุณาเลือกโครงการ' }
+    for (const g of splitStats(lines).values()) {
+      if (Math.abs(g.remaining) > g.tolerance) {
+        return { error: `บรรทัดที่แบ่งเข้าหลายรายการ BOQ รวมได้ ${formatBaht(g.allocated)} แต่ในเอกสาร ${formatBaht(g.total)} ${g.remaining > 0 ? `ยังเหลือ ${formatBaht(g.remaining)}` : `เกิน ${formatBaht(-g.remaining)}`}`, key: g.lastKey }
+      }
+    }
     const payloadLines: PrLinePayload[] = []
     for (const [idx, e] of evaluated.entries()) {
       const bad = (msg: string) => ({ error: `รายการที่ ${idx + 1}: ${msg}`, key: e.line.key })
@@ -262,7 +343,7 @@ export function PrForm({
         variance_reason: e.line.variance_reason.trim() || null,
       })
     }
-    return { client_ref: newClientRef(), project_id: projectId, needed_by_date: null, note: note.trim() || null, attachment_path: attachmentPath, lines: payloadLines }
+    return { client_ref: newClientRef(), project_id: projectId, needed_by_date: null, note: note.trim() || null, attachment_path: attachmentPath, vat_exempt: vatExempt, lines: payloadLines }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -317,6 +398,13 @@ export function PrForm({
             {projects.map(p => <option key={p.id} value={p.id}>{p.code} {p.name}</option>)}
           </Select>
         </FormField>
+        <label className="flex min-h-12 items-center gap-3 rounded border border-input px-3 py-2">
+          <input type="checkbox" className="size-5 accent-primary" checked={vatExempt} onChange={e => toggleVatExempt(e.target.checked)} />
+          <span className="flex flex-col">
+            <span className="font-medium">ไม่มี VAT</span>
+            <span className="text-xs text-muted-foreground">ผู้ขายไม่ได้จด VAT เช่น บุคคลธรรมดา บิลเงินสด ราคาที่กรอกคือยอดจ่ายจริง นับเป็นต้นทุนเต็มจำนวน</span>
+          </span>
+        </label>
       </div>
 
       {lines.length > 2 && (
@@ -360,6 +448,7 @@ export function PrForm({
                       {formatQty(Number(line.qty))} {unitLabel} × {formatBaht(Number(line.unit_price))}
                     </span>
                   )}
+                  {line.split_group && <span className="rounded-sm bg-brand-tint px-1.5 py-0.5 font-semibold text-primary">แบ่งจากบรรทัดในเอกสาร</span>}
                   {status.chips.map(c => (
                     <span key={c.text} className={cn('rounded-sm px-1.5 py-0.5 font-semibold', CHIP[c.tone])}>{c.text}</span>
                   ))}
@@ -373,6 +462,24 @@ export function PrForm({
 
             {expanded && (
             <div className="space-y-4 rounded-b-xl border-t border-border bg-muted/20 p-3 md:p-4">
+
+            {line.split_group && splits.get(line.split_group) && (() => {
+              const g = splits.get(line.split_group)!
+              const done = Math.abs(g.remaining) <= g.tolerance
+              return (
+                <div className={cn('rounded-lg px-3 py-2 text-sm', done ? 'bg-success-bg text-success-fg' : 'bg-warning-bg text-warning-fg')}>
+                  <div>
+                    บรรทัดในเอกสารยอด {formatBaht(g.total)} แบ่งเข้า {g.count} รายการ BOQ · แบ่งแล้ว {formatBaht(g.allocated)}
+                    {done ? ' ครบแล้ว' : g.remaining > 0 ? ` · เหลือ ${formatBaht(g.remaining)}` : ` · เกิน ${formatBaht(-g.remaining)}`}
+                  </div>
+                  {!done && (
+                    <button type="button" className="mt-1 font-semibold underline" onClick={() => fillRemaining(line, g.remaining)}>
+                      {g.remaining > 0 ? 'ใส่ยอดที่เหลือให้รายการนี้' : 'หักยอดที่เกินจากรายการนี้'}
+                    </button>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* ชื่อและปริมาณตามเอกสารอยู่ที่หัวการ์ดแล้ว ตรงนี้แสดงเฉพาะข้อสังเกตจากการอ่าน */}
             {line.doc_note && (
@@ -441,6 +548,7 @@ export function PrForm({
               onChange={v => update(line.key, { unit_price: v })}
               required
               invalid={!!ev?.priceOverThreshold}
+              exempt={vatExempt}
             />
             {item && line.buy_other && boq && knownFactor(line) !== null && line.qty !== '' && (
               <p className="text-xs text-muted-foreground tabular">
@@ -455,7 +563,7 @@ export function PrForm({
                   แต่ยังไม่เทียบปริมาณและราคาต่อหน่วยกับ BOQ ดูทุนเทียบราคาขายของรายการนี้ได้ที่หน้าสรุปต้นทุน
                 </div>
                 <div className="text-right text-xs text-muted-foreground tabular">
-                  รวม {formatBaht(ev.amount)} บาท (ไม่รวม VAT) · {formatBaht(addVat(ev.amount))} บาท (รวม VAT)
+                  รวม {formatBaht(ev.amount)} บาท {vatExempt ? '(ไม่มี VAT)' : `(ไม่รวม VAT) · ${formatBaht(addVat(ev.amount))} บาท (รวม VAT)`}
                 </div>
               </div>
             )}
@@ -489,7 +597,7 @@ export function PrForm({
                   </div>
                 )}
                 <div className="text-right text-xs text-muted-foreground tabular">
-                  รวม {formatBaht(ev.amount)} บาท (ไม่รวม VAT) · {formatBaht(addVat(ev.amount))} บาท (รวม VAT)
+                  รวม {formatBaht(ev.amount)} บาท {vatExempt ? '(ไม่มี VAT)' : `(ไม่รวม VAT) · ${formatBaht(addVat(ev.amount))} บาท (รวม VAT)`}
                 </div>
               </div>
             )}
@@ -509,9 +617,14 @@ export function PrForm({
             </FormField>
 
             <div className="flex justify-between gap-2 border-t border-border pt-3">
-              {lines.length > 1 ? (
-                <Button type="button" size="sm" variant="ghost" className="text-danger-fg" onClick={() => setLines(ls => ls.filter(l => l.key !== line.key))}>ลบรายการนี้</Button>
-              ) : <span />}
+              <span className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => splitLine(line)}>
+                  {line.split_group ? 'เพิ่มอีกรายการ BOQ' : 'แบ่งเข้าหลายรายการ BOQ'}
+                </Button>
+                {lines.length > 1 && (
+                  <Button type="button" size="sm" variant="ghost" className="text-danger-fg" onClick={() => setLines(ls => ls.filter(l => l.key !== line.key))}>ลบรายการนี้</Button>
+                )}
+              </span>
               <Button type="button" size="sm" variant="outline" onClick={() => update(line.key, { open: false })}>พับ</Button>
             </div>
             </div>
@@ -531,8 +644,8 @@ export function PrForm({
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4 text-sm">
-        <div className="flex justify-between"><span className="text-muted-foreground">มูลค่ารวม (ไม่รวม VAT)</span><span className="tabular font-semibold">{formatBaht(routing.total)} บาท</span></div>
-        <div className="flex justify-between mt-1"><span className="text-muted-foreground">มูลค่ารวม (รวม VAT)</span><span className="tabular">{formatBaht(addVat(routing.total))} บาท</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">{vatExempt ? 'มูลค่ารวม (ไม่มี VAT)' : 'มูลค่ารวม (ไม่รวม VAT)'}</span><span className="tabular font-semibold">{formatBaht(routing.total)} บาท</span></div>
+        {!vatExempt && <div className="flex justify-between mt-1"><span className="text-muted-foreground">มูลค่ารวม (รวม VAT)</span><span className="tabular">{formatBaht(addVat(routing.total))} บาท</span></div>}
         {directMode ? (
           <p className="text-xs text-muted-foreground mt-2">บันทึกแล้วนับเป็นต้นทุนจริงของโครงการทันที ไม่ต้องอนุมัติ ออกใบสั่งซื้อ หรือรับของ</p>
         ) : (
@@ -549,9 +662,9 @@ export function PrForm({
       </div>
 
       {/* มือถือ: ยอดรวมและปุ่มบันทึกติดอยู่เหนือเมนูล่าง ไม่ต้องเลื่อนลงไปหา */}
-      <div className="sticky bottom-[calc(3.6rem+env(safe-area-inset-bottom))] z-20 -mx-4 border-t border-border bg-background/95 px-4 py-2 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0">
+      <div className="sticky bottom-[calc(4.2rem+env(safe-area-inset-bottom))] z-20 -mx-4 border-t border-border bg-background/95 px-4 py-2 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0">
         <div className="mb-1.5 flex justify-between text-sm md:hidden">
-          <span className="text-muted-foreground">รวม {lines.length} รายการ (ไม่รวม VAT)</span>
+          <span className="text-muted-foreground">รวม {lines.length} รายการ ({vatExempt ? 'ไม่มี VAT' : 'ไม่รวม VAT'})</span>
           <span className="tabular font-semibold">{formatBaht(routing.total)}</span>
         </div>
         <Button type="submit" size="lg" className="w-full" disabled={pending}>

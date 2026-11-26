@@ -28,6 +28,10 @@ export interface ReviewResult {
   issues: string[] // ตัวเลขในเอกสารไม่ตรงกัน อาจอ่านผิด
   notes: string[] // สิ่งที่ระบบปรับให้ เช่น ถอด VAT เฉลี่ยส่วนลด
   total_excl_vat: number | null
+  // เอกสารไม่มี VAT: ราคาที่บันทึกคือราคาจ่ายจริง ไม่ถอด VAT และนับเป็นต้นทุนเต็มจำนวน
+  vat_exempt: boolean
+  // ระบบถอด VAT ออกจากราคาในเอกสารแล้ว
+  vat_removed: boolean
 }
 
 function off(actual: number, expected: number): boolean {
@@ -55,6 +59,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 export function reviewExtraction(doc: ExtractedDoc, boq: BoqRef[]): ReviewResult {
   const issues: string[] = []
   const notes: string[] = []
+  const vatExempt = doc.has_vat === false
+  const inclVat = doc.prices_include_vat && !vatExempt
 
   let sumLines = 0
   let sumComplete = true
@@ -79,19 +85,20 @@ export function reviewExtraction(doc: ExtractedDoc, boq: BoqRef[]): ReviewResult
   const subtotal = doc.subtotal ?? (sumComplete ? sumLines : null)
   const discount = Math.abs(doc.discount ?? 0)
   const afterDiscount = subtotal !== null ? subtotal - discount : null
-  if (afterDiscount !== null && doc.vat !== null && !doc.prices_include_vat) {
+  if (afterDiscount !== null && doc.vat !== null && !inclVat && !vatExempt) {
     const exp = (afterDiscount * VAT_RATE_PCT) / 100
     if (off(doc.vat, exp)) issues.push(`VAT ในเอกสาร ${formatBaht(doc.vat)} แต่ ${VAT_RATE_PCT}% ของ ${formatBaht(afterDiscount)} = ${formatBaht(exp)}`)
   }
   if (afterDiscount !== null && doc.grand_total !== null) {
-    const exp = doc.prices_include_vat ? afterDiscount : afterDiscount + (doc.vat ?? 0)
+    const exp = inclVat || vatExempt ? afterDiscount : afterDiscount + (doc.vat ?? 0)
     if (off(doc.grand_total, exp)) issues.push(`ยอดสุทธิในเอกสาร ${formatBaht(doc.grand_total)} แต่คำนวณได้ ${formatBaht(exp)}`)
   }
 
   // ส่วนลดท้ายบิลเฉลี่ยลงทุกบรรทัดตามสัดส่วน ต้นทุนจริงของแต่ละรายการจึงสะท้อนราคาที่จ่ายจริง
   const discountRatio = subtotal && subtotal > 0 && discount > 0 ? (subtotal - discount) / subtotal : 1
   if (discountRatio !== 1) notes.push(`มีส่วนลดท้ายบิล ${formatBaht(discount)} บาท ระบบเฉลี่ยลงราคาต่อหน่วยทุกบรรทัดตามสัดส่วน`)
-  if (doc.prices_include_vat) notes.push('ราคาในเอกสารรวม VAT ระบบถอด VAT ออกให้ เพราะต้นทุนในระบบไม่รวม VAT')
+  if (vatExempt) notes.push('เอกสารไม่มี VAT ราคาที่บันทึกเป็นราคาจ่ายจริง นับเป็นต้นทุนเต็มจำนวน')
+  else if (inclVat) notes.push('ราคาในเอกสารรวม VAT ระบบถอด VAT ออกให้ เพราะต้นทุนในระบบไม่รวม VAT')
 
   let totalExcl = 0
   let totalComplete = true
@@ -99,7 +106,7 @@ export function reviewExtraction(doc: ExtractedDoc, boq: BoqRef[]): ReviewResult
     let unitPrice: number | null = null
     if (price !== null) {
       let p = price * discountRatio
-      if (doc.prices_include_vat) p = p / (1 + VAT_RATE_PCT / 100)
+      if (inclVat) p = p / (1 + VAT_RATE_PCT / 100)
       unitPrice = round2(p)
     }
     if (unitPrice !== null && l.qty !== null) totalExcl += unitPrice * l.qty
@@ -125,5 +132,5 @@ export function reviewExtraction(doc: ExtractedDoc, boq: BoqRef[]): ReviewResult
     return { description: l.description, qty: l.qty, unit: l.unit, unit_price: unitPrice, boq_item_id: item?.id ?? null, qty_factor: factor, note }
   })
 
-  return { lines, issues, notes, total_excl_vat: totalComplete ? round2(totalExcl) : null }
+  return { lines, issues, notes, total_excl_vat: totalComplete ? round2(totalExcl) : null, vat_exempt: vatExempt, vat_removed: inclVat }
 }

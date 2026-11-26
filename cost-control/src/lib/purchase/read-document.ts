@@ -54,7 +54,7 @@ export async function readPurchaseDocument(
   const base = (doc: ExtractedDoc | null): PurchaseDocumentResult => ({
     project_id: null, job_reference: doc?.job_reference ?? null, attachment_path: null, read_error: null,
     supplier_name: doc?.supplier_name ?? null, document_no: doc?.document_no ?? null, document_date: doc?.document_date ?? null,
-    grand_total: doc?.grand_total ?? null, total_excl_vat: null, lines: [], issues: [], notes: [], warnings: [], unassigned_doc: null,
+    grand_total: doc?.grand_total ?? null, total_excl_vat: null, vat_exempt: doc?.has_vat === false, vat_removed: false, lines: [], issues: [], notes: [], warnings: [], unassigned_doc: null,
   })
 
   // รู้โครงการแล้ว: จับคู่ BOQ (ถ้ายังไม่ได้จับ) แนบไฟล์ และตรวจตัวเลข
@@ -83,6 +83,8 @@ export async function readPurchaseDocument(
         project_id: id,
         attachment_path: path,
         total_excl_vat: review.total_excl_vat,
+        vat_exempt: review.vat_exempt,
+        vat_removed: review.vat_removed,
         lines: review.lines,
         issues: review.issues,
         notes: [...opts.notes, ...review.notes],
