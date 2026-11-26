@@ -99,26 +99,32 @@ export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<S
   const { data: prNo, error: noErr } = await supabase.rpc('next_document_no', { p_type: 'PR' })
   if (noErr) return fail(noErr)
 
-  const { data: pr, error: prErr } = await supabase
-    .from('purchase_requests')
-    .insert({
-      pr_no: prNo as string,
-      project_id: payload.project_id,
-      requested_by: user.id,
-      status: 'draft',
-      needed_by_date: payload.needed_by_date || null,
-      note: payload.note || null,
-      client_ref: payload.client_ref || null,
-      vat_exempt: payload.vat_exempt === true,
-      document_no: payload.document_no?.trim() || null,
-      document_key: documentKey(payload.document_no),
-      // รับเฉพาะไฟล์ใต้โฟลเดอร์ของโครงการนี้
-      attachment_path: payload.attachment_path?.startsWith(`projects/${payload.project_id}/purchases/`) ? payload.attachment_path : null,
-      created_by: user.id,
-    })
-    .select('id, pr_no')
-    .single()
-  if (prErr) return fail(prErr)
+  const base = {
+    pr_no: prNo as string,
+    project_id: payload.project_id,
+    requested_by: user.id,
+    status: 'draft',
+    needed_by_date: payload.needed_by_date || null,
+    note: payload.note || null,
+    client_ref: payload.client_ref || null,
+    // รับเฉพาะไฟล์ใต้โฟลเดอร์ของโครงการนี้
+    attachment_path: payload.attachment_path?.startsWith(`projects/${payload.project_id}/purchases/`) ? payload.attachment_path : null,
+    created_by: user.id,
+  }
+  const extra = {
+    vat_exempt: payload.vat_exempt === true,
+    document_no: payload.document_no?.trim() || null,
+    document_key: documentKey(payload.document_no),
+  }
+  let { data: pr, error: prErr } = await supabase.from('purchase_requests').insert({ ...base, ...extra }).select('id, pr_no').single()
+  // ฐานข้อมูลยังไม่ได้รัน migration ที่เพิ่มคอลัมน์ใหม่ (PGRST204) บันทึกต่อได้โดยไม่มีคอลัมน์นั้น ไม่ให้งานหยุด
+  // ราคาของใบไม่มี VAT เป็นยอดจ่ายจริงอยู่แล้ว ต้นทุนถูกต้อง เหลือแค่บอกไว้ในหมายเหตุ
+  if (prErr && (prErr.code === 'PGRST204' || prErr.code === '42703' || /schema cache/i.test(prErr.message))) {
+    console.warn('purchase_requests ยังไม่มีคอลัมน์ใหม่ ต้องรัน migration 0020-0021:', prErr.message)
+    const note = [base.note, extra.vat_exempt ? 'ไม่มี VAT' : null, extra.document_no ? `เลขที่เอกสาร ${extra.document_no}` : null].filter(Boolean).join(' · ') || null
+    ;({ data: pr, error: prErr } = await supabase.from('purchase_requests').insert({ ...base, note }).select('id, pr_no').single())
+  }
+  if (prErr || !pr) return fail(prErr)
 
   const { error: itemErr } = await supabase.from('purchase_request_items').insert(
     payload.lines.map(l => ({
