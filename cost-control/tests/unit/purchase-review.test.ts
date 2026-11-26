@@ -11,7 +11,7 @@ const boq = [
 function doc(over: Partial<ExtractedDoc> = {}): ExtractedDoc {
   return {
     is_purchase_document: true, supplier_name: 'บจก.เหล็กใต้', document_no: 'PO-001', job_reference: null, project_index: null, document_date: '2026-10-17',
-    prices_include_vat: false, subtotal: 92000, discount: null, vat: 6440, grand_total: 98440,
+    has_vat: true, prices_include_vat: false, subtotal: 92000, discount: null, vat: 6440, grand_total: 98440,
     lines: [
       { description: 'H-BEAM 200x200 6m', qty: 10, unit: 'เส้น', unit_price: 9000, line_total: 90000, boq_index: 0, qty_factor: null, match_note: null },
       { description: 'สีกันสนิม', qty: 2, unit: 'กล.', unit_price: 1000, line_total: 2000, boq_index: 1, qty_factor: null, match_note: null },
@@ -41,7 +41,7 @@ describe('ตรวจและแปลงรายการที่ Claude �
   })
 
   it('ส่วนลดท้ายบิลเฉลี่ยลงราคาต่อหน่วย และถอด VAT เมื่อราคาในเอกสารรวม VAT', () => {
-    const r = reviewExtraction(doc({ prices_include_vat: true, subtotal: 92000, discount: 9200, vat: null, grand_total: 82800 }), boq)
+    const r = reviewExtraction(doc({ has_vat: true, prices_include_vat: true, subtotal: 92000, discount: 9200, vat: null, grand_total: 82800 }), boq)
     expect(r.issues).toEqual([])
     // 9,000 × 0.9 ÷ 1.07 = 7,570.09
     expect(r.lines[0].unit_price).toBe(7570.09)
@@ -69,5 +69,20 @@ describe('ตรวจและแปลงรายการที่ Claude �
   it('หน่วยที่เขียนต่างกันแต่ความหมายเดียวกันถือว่าเป็นหน่วยเดียวกัน', () => {
     expect(normalizeUnit('kg.')).toBe(normalizeUnit('กก.'))
     expect(normalizeUnit('ตร.ม.')).toBe(normalizeUnit('m2'))
+  })
+
+  it('เอกสารไม่มี VAT ไม่ถอด VAT ราคาที่บันทึกเท่ากับราคาจ่ายจริง', () => {
+    const r = reviewExtraction(
+      doc({
+        has_vat: false, prices_include_vat: true, subtotal: 89000, vat: null, grand_total: 89000,
+        lines: [{ description: 'ค่าแรงรื้อและติดตั้งแผ่นหลังคา', qty: 1, unit: 'หลัง', unit_price: 89000, line_total: 89000, boq_index: null, qty_factor: null, match_note: null }],
+      }),
+      boq
+    )
+    expect(r.vat_exempt).toBe(true)
+    expect(r.issues).toEqual([])
+    expect(r.lines[0].unit_price).toBe(89000)
+    expect(r.total_excl_vat).toBe(89000)
+    expect(r.notes.join(' ')).toContain('ไม่มี VAT')
   })
 })

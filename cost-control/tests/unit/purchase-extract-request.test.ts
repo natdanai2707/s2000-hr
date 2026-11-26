@@ -11,7 +11,7 @@ const saved = { key: process.env.ANTHROPIC_API_KEY, url: process.env.ANTHROPIC_B
 
 const doc = {
   is_purchase_document: true, supplier_name: 'บจก.เหล็กใต้', document_no: 'PO-001', job_reference: null, project_index: null, document_date: '2026-10-17',
-  prices_include_vat: false, subtotal: 90000, discount: null, vat: 6300, grand_total: 96300,
+  has_vat: true, prices_include_vat: false, subtotal: 90000, discount: null, vat: 6300, grand_total: 96300,
   lines: [{ description: 'H-BEAM 200x200', qty: 10, unit: 'เส้น', unit_price: 9000, line_total: 90000, boq_index: 0, qty_factor: null, match_note: null }],
   warnings: [],
 }

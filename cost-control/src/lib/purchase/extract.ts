@@ -34,7 +34,8 @@ const DocSchema = z.object({
     .nullable()
     .describe('เลข [n] ของโครงการในรายการโครงการที่ตรงกับเลขงานหรือชื่องานในเอกสาร null ถ้าไม่ตรงหรือไม่แน่ใจ'),
   document_date: z.string().nullable().describe('วันที่เอกสารแบบ YYYY-MM-DD ปี ค.ศ. ถ้าเอกสารเป็น พ.ศ. ให้ลบ 543'),
-  prices_include_vat: z.boolean().describe('ราคาต่อหน่วยและจำนวนเงินรายบรรทัดในเอกสารรวม VAT แล้วหรือไม่'),
+  has_vat: z.boolean().describe('เอกสารนี้เก็บ VAT หรือไม่ false เมื่อผู้ขายไม่ได้จด VAT เช่น บุคคลธรรมดา บิลเงินสด ไม่มีบรรทัด VAT และไม่ใช่ใบกำกับภาษี'),
+  prices_include_vat: z.boolean().describe('ราคาต่อหน่วยและจำนวนเงินรายบรรทัดในเอกสารรวม VAT แล้วหรือไม่ false เสมอเมื่อ has_vat เป็น false'),
   subtotal: z.number().nullable().describe('ยอดรวมรายการก่อนส่วนลดและ VAT ตามที่พิมพ์'),
   discount: z.number().nullable().describe('ส่วนลดท้ายบิล เป็นจำนวนบวก'),
   vat: z.number().nullable(),
@@ -47,7 +48,8 @@ export type ExtractedDoc = z.infer<typeof DocSchema>
 
 // เอกสารที่อ่านแล้วแต่ยังไม่รู้โครงการ ฝั่งเบราว์เซอร์ส่งกลับมาตอนผู้ใช้เลือกโครงการ ตรวจรูปแบบก่อนใช้
 export function parseExtractedDoc(v: unknown): ExtractedDoc | null {
-  const r = DocSchema.safeParse(v)
+  // เอกสารที่อ่านก่อนมีช่อง has_vat ถือว่ามี VAT ตามเดิม
+  const r = DocSchema.safeParse(v && typeof v === 'object' ? { has_vat: true, ...v } : v)
   return r.success ? r.data : null
 }
 
@@ -77,6 +79,8 @@ const SYSTEM = `คุณคือผู้ช่วยอ่านเอกส�
    qty_factor คือจำนวนหน่วย BOQ ต่อหนึ่งหน่วยในเอกสาร หาได้จากข้อมูลในชื่อรายการ เช่น 49.9 kg/m ยาว 6 m = 299.4 kg ต่อเส้น
    ถ้าหาไม่ได้จากข้อมูลที่เห็น ให้ null และบอกใน match_note
 5. ราคาในเอกสารไทยอาจรวม VAT หรือไม่รวม ดูจากหัวคอลัมน์และท้ายบิล ถ้าท้ายบิลมีบรรทัด VAT แยก แปลว่าราคารายการไม่รวม VAT
+   ถ้าเอกสารไม่มี VAT เลย เช่น ผู้ขายเป็นบุคคลธรรมดา (นาย นาง น.ส.) บิลเงินสดหรือใบสำคัญรับเงินที่ไม่มีบรรทัด VAT
+   และไม่ได้เขียนว่าใบกำกับภาษีหรือราคารวม VAT ให้ has_vat = false และ prices_include_vat = false อย่าเดาว่ารวม VAT
 6. บรรทัดค่าขนส่งหรือค่าบริการให้ใส่เป็นรายการด้วย
 7. เอกสารของเอส-2000 มักมีช่อง JOB หรือเลขงาน เช่น A6910-05(V100) ให้ใส่ใน job_reference ตามที่พิมพ์
    แล้วเลือกโครงการที่เลขงานตรงกันใน project_index ถ้าไม่มีเลขงาน ดูจากชื่องานหรือสถานที่ในหมายเหตุ ถ้าไม่แน่ใจให้ null`
