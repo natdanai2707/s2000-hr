@@ -6,6 +6,8 @@ import { requireUser, loadSettings } from '@/lib/auth'
 import { usesDirectPurchase } from '@/lib/types'
 import { notify, approverIdsFor } from '@/lib/notifications'
 import { formatBaht } from '@/lib/format'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { documentKey, findDuplicatePurchases, type DuplicatePurchase } from '@/lib/purchase/duplicates'
 import { fail, type ActionResult } from './types'
 
 export interface PrLinePayload {
@@ -31,11 +33,34 @@ export interface QueuedPrPayload {
   attachment_path?: string | null
   // ผู้ขายไม่ได้จด VAT ราคาในรายการคือราคาจ่ายจริง
   vat_exempt?: boolean
+  // เลขที่เอกสารจากผู้ขาย ใช้หาใบที่บันทึกซ้ำ
+  document_no?: string | null
+  // ผู้ใช้เห็นคำเตือนใบซ้ำแล้วและยืนยันว่าไม่ใช่ใบเดียวกัน
+  confirm_duplicate?: boolean
   lines: PrLinePayload[]
 }
 
+export type SubmitPrResult =
+  | ActionResult<{ id: string; pr_no: string; status: string }>
+  | { ok: false; error: string; duplicates: DuplicatePurchase[] }
+
+function payloadTotal(lines: PrLinePayload[]): number {
+  return Math.round(lines.reduce((n, l) => n + l.qty * l.unit_price, 0) * 100) / 100
+}
+
+// เตือนใบซ้ำตั้งแต่อ่านเอกสารเสร็จ ก่อนผู้ใช้เสียเวลาตรวจรายการ
+export async function checkPurchaseDuplicates(input: { project_id: string; document_no: string | null; total: number; supplier_name: string | null }): Promise<ActionResult<DuplicatePurchase[]>> {
+  await requireUser()
+  if (!input.project_id) return { ok: true, data: [] }
+  try {
+    return { ok: true, data: await findDuplicatePurchases(createAdminClient(), input) }
+  } catch (e) {
+    return fail(e)
+  }
+}
+
 // สร้าง PR + รายการ แล้วส่งอนุมัติทันที (routing คำนวณที่ DB) idempotent ด้วย client_ref
-export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<ActionResult<{ id: string; pr_no: string; status: string }>> {
+export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<SubmitPrResult> {
   const user = await requireUser()
   const supabase = await createClient()
 
@@ -58,6 +83,19 @@ export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<A
     if (existing) return { ok: true, data: existing }
   }
 
+  // กันบันทึกซ้ำ: เลขที่เอกสารเดียวกัน หรือโครงการ ผู้ขาย ยอดเดียวกัน ต้องให้ผู้ใช้ยืนยันก่อน
+  if (!payload.confirm_duplicate) {
+    const duplicates = await findDuplicatePurchases(createAdminClient(), {
+      project_id: payload.project_id,
+      document_no: payload.document_no ?? null,
+      total: payloadTotal(payload.lines),
+      supplier_name: payload.lines.find(l => l.supplier_name)?.supplier_name ?? null,
+    })
+    if (duplicates.length) {
+      return { ok: false, error: `พบรายการที่อาจบันทึกซ้ำ ${duplicates.map(d => d.pr_no).join(', ')} ตรวจแล้วติ๊กยืนยันก่อนบันทึก`, duplicates }
+    }
+  }
+
   const { data: prNo, error: noErr } = await supabase.rpc('next_document_no', { p_type: 'PR' })
   if (noErr) return fail(noErr)
 
@@ -72,6 +110,8 @@ export async function submitPurchaseRequest(payload: QueuedPrPayload): Promise<A
       note: payload.note || null,
       client_ref: payload.client_ref || null,
       vat_exempt: payload.vat_exempt === true,
+      document_no: payload.document_no?.trim() || null,
+      document_key: documentKey(payload.document_no),
       // รับเฉพาะไฟล์ใต้โฟลเดอร์ของโครงการนี้
       attachment_path: payload.attachment_path?.startsWith(`projects/${payload.project_id}/purchases/`) ? payload.attachment_path : null,
       created_by: user.id,

@@ -38,6 +38,7 @@ function docBadge(d: DocEntry): { label: string; tone: BadgeTone } {
   if (d.status === 'saved') return { label: 'บันทึกแล้ว', tone: 'done' }
   if (d.status === 'error') return { label: 'อ่านไม่สำเร็จ', tone: 'danger' }
   if (d.status === 'unassigned') return { label: 'เลือกโครงการ', tone: 'warning' }
+  if (d.dupes > 0) return { label: 'อาจบันทึกซ้ำ', tone: 'danger' }
   const r = d.result
   const checks = (r?.issues.length ?? 0) + (r?.lines.filter(l => !l.boq_item_id).length ?? 0) + (r?.read_error ? 1 : 0)
   return checks ? { label: `ต้องตรวจ ${checks} จุด`, tone: 'warning' } : { label: 'พร้อมบันทึก', tone: 'success' }
@@ -54,6 +55,7 @@ interface DocEntry {
   error: string | null
   saved: { id: string; pr_no: string } | null
   pick: string // โครงการที่ผู้ใช้เลือกเมื่อระบบหาจากเลขงานไม่ได้
+  dupes: number // ใบเดิมที่อาจซ้ำกับใบนี้
 }
 
 // อ่านพร้อมกันได้ไม่เกินเท่านี้ใบ ที่เหลือรอคิว
@@ -152,6 +154,7 @@ export function PurchaseEntry({
       error: null,
       saved: null,
       pick: '',
+      dupes: 0,
     }))
     setDocs(ds => [...ds, ...entries])
     for (const e of entries) void read(e, null, null)
@@ -254,7 +257,11 @@ export function PurchaseEntry({
                     initialProjectId={null}
                     directMode={directMode}
                     initialDocument={d.result}
-                    onSaved={pr => patch(d.key, { status: 'saved', saved: pr })}
+                    onSaved={pr => patch(d.key, { status: 'saved', saved: pr, dupes: 0 })}
+                    onDuplicates={n => {
+                      patch(d.key, { dupes: n })
+                      if (n) announce(d, 'danger', `อาจบันทึกซ้ำกับรายการเดิม ${n} ใบ ตรวจก่อนบันทึก`)
+                    }}
                   />
                 </>
               )}
