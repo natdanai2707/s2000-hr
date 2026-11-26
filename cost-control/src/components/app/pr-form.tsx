@@ -1,9 +1,11 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOnline } from '@/lib/hooks/use-online'
 import { useRouter } from 'next/navigation'
-import { submitPurchaseRequest, type PrLinePayload, type QueuedPrPayload } from '@/actions/purchase-requests'
+import { submitPurchaseRequest, checkPurchaseDuplicates, type PrLinePayload, type QueuedPrPayload } from '@/actions/purchase-requests'
+import type { DuplicatePurchase } from '@/lib/purchase/duplicates'
+import Link from 'next/link'
 import { evaluateLine, routePurchaseRequest } from '@/lib/pr/routing'
 import { enqueue, newClientRef } from '@/lib/offline/queue'
 import type { Settings, BoqCategory } from '@/lib/types'
@@ -175,6 +177,7 @@ export function PrForm({
   directMode = false,
   initialDocument,
   onSaved,
+  onDuplicates,
 }: {
   projects: PrFormProject[]
   suppliers: { id: string; name: string }[]
@@ -183,6 +186,8 @@ export function PrForm({
   directMode?: boolean
   initialDocument?: PurchaseDocumentResult
   onSaved?: (pr: { id: string; pr_no: string }) => void
+  // แจ้งจำนวนใบที่อาจซ้ำให้การ์ดเอกสารแสดงป้าย
+  onDuplicates?: (n: number) => void
 }) {
   const router = useRouter()
   const startProject = initialDocument?.project_id ?? initialProjectId
@@ -192,6 +197,15 @@ export function PrForm({
     return docLines.length ? docLines : [newLine()]
   })
   const [note, setNote] = useState(() => (initialDocument ? documentNote(initialDocument) : ''))
+  const [docNo, setDocNo] = useState(initialDocument?.document_no ?? '')
+  // ใบที่อาจบันทึกซ้ำ ต้องติ๊กยืนยันก่อนจึงบันทึกได้
+  const [dupes, setDupes] = useState<DuplicatePurchase[]>([])
+  const [confirmDup, setConfirmDup] = useState(false)
+  const showDupes = (list: DuplicatePurchase[]) => {
+    setDupes(list)
+    setConfirmDup(false)
+    onDuplicates?.(list.length)
+  }
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [queuedMsg, setQueuedMsg] = useState<string | null>(null)
@@ -246,6 +260,22 @@ export function PrForm({
     evaluated.filter(e => e.item).map(e => e.input!),
     settings
   )
+
+  // อ่านเอกสารเสร็จแล้วเช็กใบซ้ำทันที ไม่ต้องรอกดบันทึก
+  const checked = useRef(false)
+  useEffect(() => {
+    if (checked.current || !initialDocument || !projectId || !navigator.onLine) return
+    checked.current = true
+    void checkPurchaseDuplicates({
+      project_id: projectId,
+      document_no: initialDocument.document_no,
+      total: routing.total,
+      supplier_name: lines.find(l => l.supplier_name)?.supplier_name || initialDocument.supplier_name,
+    }).then(res => {
+      if (res.ok && res.data.length) showDupes(res.data)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId])
 
   // เลือกรายการ BOQ: ถ้าเป็นเหล็กที่ BOQ คิดเป็นกิโลและบอกน้ำหนักกับความยาว ตั้งให้ซื้อเป็นเส้นพร้อมตัวแปลง
   function chooseItem(line: Line, i: PrFormItem) {
@@ -343,7 +373,7 @@ export function PrForm({
         variance_reason: e.line.variance_reason.trim() || null,
       })
     }
-    return { client_ref: newClientRef(), project_id: projectId, needed_by_date: null, note: note.trim() || null, attachment_path: attachmentPath, vat_exempt: vatExempt, lines: payloadLines }
+    return { client_ref: newClientRef(), project_id: projectId, needed_by_date: null, note: note.trim() || null, attachment_path: attachmentPath, vat_exempt: vatExempt, document_no: docNo.trim() || null, confirm_duplicate: dupes.length > 0 && confirmDup, lines: payloadLines }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -368,6 +398,7 @@ export function PrForm({
       const res = await submitPurchaseRequest(payload)
       setPending(false)
       if (!res.ok) {
+        if ('duplicates' in res) showDupes(res.duplicates)
         fail(res.error)
         return
       }
@@ -405,6 +436,9 @@ export function PrForm({
             <span className="text-xs text-muted-foreground">ผู้ขายไม่ได้จด VAT เช่น บุคคลธรรมดา บิลเงินสด ราคาที่กรอกคือยอดจ่ายจริง นับเป็นต้นทุนเต็มจำนวน</span>
           </span>
         </label>
+        <FormField label="เลขที่เอกสาร (PO ใบกำกับภาษี หรือบิล)" hint="ใช้ตรวจการบันทึกซ้ำ ไม่บังคับ">
+          <Input value={docNo} onChange={e => { setDocNo(e.target.value); if (dupes.length) showDupes([]) }} placeholder="เช่น PO-6611-0412" />
+        </FormField>
       </div>
 
       {lines.length > 2 && (
@@ -661,13 +695,38 @@ export function PrForm({
         )}
       </div>
 
+      {dupes.length > 0 && (
+        <div id="pr-duplicates" className="space-y-3 rounded-xl border-2 border-status-alert bg-danger-bg p-4 text-danger-fg">
+          <div className="font-bold">อาจบันทึกซ้ำ พบรายการเดิม {dupes.length} ใบ</div>
+          <ul className="space-y-2 text-sm">
+            {dupes.map(d => (
+              <li key={d.id} className="rounded-lg bg-card px-3 py-2 text-foreground">
+                <Link href={`/pr/${d.id}`} target="_blank" className="font-semibold text-primary underline">{d.pr_no}</Link>
+                {' · '}{d.project_code}{d.supplier_name ? ` · ${d.supplier_name}` : ''}
+                <div className="text-xs text-muted-foreground">
+                  {d.reason === 'document_no' ? `เลขที่เอกสาร ${d.document_no ?? ''} ตรงกัน` : 'โครงการ ผู้ขาย และยอดเงินตรงกัน'}
+                  {` · ${formatBaht(d.total_amount)} บาท · บันทึกเมื่อ ${formatThaiDate(d.created_at)}`}
+                </div>
+              </li>
+            ))}
+          </ul>
+          <label className="flex min-h-12 items-center gap-3 rounded-lg bg-card px-3 py-2 text-foreground">
+            <input type="checkbox" className="size-5 accent-primary" checked={confirmDup} onChange={e => setConfirmDup(e.target.checked)} />
+            <span className="font-medium">ตรวจแล้ว ไม่ใช่รายการเดียวกัน ยืนยันบันทึก</span>
+          </label>
+        </div>
+      )}
+
       {/* มือถือ: ยอดรวมและปุ่มบันทึกติดอยู่เหนือเมนูล่าง ไม่ต้องเลื่อนลงไปหา */}
       <div className="sticky bottom-[calc(4.2rem+env(safe-area-inset-bottom))] z-20 -mx-4 border-t border-border bg-background/95 px-4 py-2 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0">
         <div className="mb-1.5 flex justify-between text-sm md:hidden">
           <span className="text-muted-foreground">รวม {lines.length} รายการ ({vatExempt ? 'ไม่มี VAT' : 'ไม่รวม VAT'})</span>
           <span className="tabular font-semibold">{formatBaht(routing.total)}</span>
         </div>
-        <Button type="submit" size="lg" className="w-full" disabled={pending}>
+        {dupes.length > 0 && !confirmDup && (
+          <p className="mb-1.5 text-center text-sm font-semibold text-danger-fg">พบรายการที่อาจซ้ำ ติ๊กยืนยันด้านบนก่อนบันทึก</p>
+        )}
+        <Button type="submit" size="lg" className="w-full" disabled={pending || (dupes.length > 0 && !confirmDup)}>
           {pending ? 'กำลังบันทึก' : !online ? 'บันทึกไว้ส่งเมื่อออนไลน์' : directMode ? 'บันทึกการสั่งซื้อ' : 'ส่งขออนุมัติ'}
         </Button>
       </div>
