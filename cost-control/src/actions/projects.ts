@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, requireUser } from '@/lib/auth'
+import { normalizeProjectCode } from '@/lib/project/job-notice'
 import { fail, type ActionResult } from './types'
 
 function str(fd: FormData, key: string): string {
@@ -20,7 +21,7 @@ function dateOrNull(fd: FormData, key: string): string | null {
 export async function createProject(fd: FormData): Promise<ActionResult<{ id: string }>> {
   const user = await requireRole(['management', 'admin', 'project_manager'])
   const supabase = await createClient()
-  const code = str(fd, 'code')
+  const code = normalizeProjectCode(str(fd, 'code'))
   const name = str(fd, 'name')
   if (!code || !name) return fail('กรุณากรอกรหัสและชื่อโครงการ')
   const { data, error } = await supabase
@@ -54,7 +55,7 @@ export async function updateProject(projectId: string, fd: FormData): Promise<Ac
   const name = str(fd, 'name')
   if (!name) return fail('กรุณากรอกชื่อโครงการ')
   // รหัสโครงการแก้ได้ เอกสารทั้งหมดผูกกับ id ของโครงการ ไม่ได้ผูกกับรหัส
-  const code = str(fd, 'code').toUpperCase()
+  const code = normalizeProjectCode(str(fd, 'code'))
   if (!code) return fail('กรุณากรอกรหัสโครงการ')
 
   const status = str(fd, 'status')

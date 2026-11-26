@@ -40,7 +40,7 @@ export function ProjectForm({ branches, project }: { branches: Branch[]; project
       {error && <Alert tone="danger">{error}</Alert>}
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField label="รหัสโครงการ">
-          <Input name="code" required defaultValue={project?.code} placeholder="เช่น A6911-05" />
+          <Input name="code" required defaultValue={project?.code} placeholder="เช่น A6911-05(V107)" />
         </FormField>
         <FormField label="สาขา">
           <Select name="branch_id" required defaultValue={project?.branch_id ?? ''}>

@@ -16,7 +16,7 @@ export interface NoticePerson {
 
 export interface JobNotice {
   code: string | null
-  version: string | null // เช่น V107 ต่อท้ายชื่องานตามแบบที่ใช้อยู่ "ชื่องาน (V107)"
+  version: string | null // เช่น V107 ต่อท้ายรหัสงานในวงเล็บ "A6911-05(V107)"
   title: string | null // ชื่องานไม่รวมเลข V
   customer_hint: string | null // ชื่อลูกค้าแบบย่อในวงเล็บท้ายบรรทัด
   people: NoticePerson[]
@@ -84,10 +84,18 @@ export function parseJobNotice(text: string): JobNotice {
   return notice
 }
 
-// ชื่อโครงการตามแบบที่ใช้อยู่: ชื่องาน (V107)
+// รหัสโครงการตามแบบที่ใช้อยู่: รหัสงานต่อด้วยเลข V ในวงเล็บ เช่น A6911-05(V107) ชื่อโครงการไม่ใส่เลข V ซ้ำ
+export function projectCodeFromNotice(n: JobNotice): string {
+  return normalizeProjectCode(n.version ? `${n.code ?? ''}(${n.version})` : n.code ?? '')
+}
+
 export function projectNameFromNotice(n: JobNotice): string {
-  const title = n.title ?? ''
-  return n.version ? `${title} (${n.version})`.trim() : title
+  return (n.title ?? '').trim()
+}
+
+// ตัวพิมพ์ใหญ่ ไม่มีช่องว่างรอบวงเล็บ: "a6911-07 ( v109 )" -> "A6911-07(V109)"
+export function normalizeProjectCode(code: string): string {
+  return code.trim().toUpperCase().replace(/\s*\(\s*/g, '(').replace(/\s*\)/g, ')').replace(/\s+/g, ' ')
 }
 
 const norm = (s: string) => cleanName(s).replace(/\s+/g, '').toLowerCase()
